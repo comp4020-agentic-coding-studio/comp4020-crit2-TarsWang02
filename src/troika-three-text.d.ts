@@ -17,4 +17,10 @@ declare module "troika-three-text" {
     sync(callback?: () => void): void;
     dispose(): void;
   }
+
+  export function configureTextBuilder(config: {
+    defaultFontURL?: string;
+    unicodeFontsURL?: string;
+    sdfGlyphSize?: number;
+  }): void;
 }

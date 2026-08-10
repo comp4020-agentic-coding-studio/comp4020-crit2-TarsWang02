@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@fontsource/source-serif-4':
+        specifier: ^5.3.0
+        version: 5.3.0
       gsap:
         specifier: ^3.15.0
         version: 3.15.0
@@ -159,6 +162,9 @@ packages:
     peerDependenciesMeta:
       '@noble/hashes':
         optional: true
+
+  '@fontsource/source-serif-4@5.3.0':
+    resolution: {integrity: sha512-yQz8xmIgMzks8zQbpuca3UYtjxK798XCyQAGdDXmzBgvV7sdoK6d0YvE9F9kiYxORCEMRBgGZDZsSYcXj5KvwA==}
 
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
@@ -1366,6 +1372,8 @@ snapshots:
     optional: true
 
   '@exodus/bytes@1.15.1': {}
+
+  '@fontsource/source-serif-4@5.3.0': {}
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
 

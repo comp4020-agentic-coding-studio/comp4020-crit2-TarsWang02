@@ -1,5 +1,8 @@
 import * as THREE from "three";
-import { Text } from "troika-three-text";
+import { Text, configureTextBuilder } from "troika-three-text";
+// Bundled by Vite, so the URL is base-path-aware and survives the deploy to a
+// Pages subpath — a literal "/fonts/…" would 404 there while working locally.
+import fontURL from "@fontsource/source-serif-4/files/source-serif-4-latin-400-normal.woff?url";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { curl3D } from "./noise";
@@ -8,6 +11,23 @@ import { whaleDistanceAt, whaleRepulsion, whaleSignedDistance } from "./whale-fi
 import { papers } from "./papers";
 
 gsap.registerPlugin(ScrollTrigger);
+
+// Self-host the font, at module scope so it is set before any Text exists.
+//
+// This is the whole field's failure mode, not a nicety. troika 0.52.5 defaults
+// both `Text.font` and `CONFIG.defaultFontURL` to null, and with both null the
+// font list it hands the worker is *empty* — so it falls back to fetching
+// glyphs from `cdn.jsdelivr.net/gh/lojjic/unicode-font-resolver` at runtime.
+// That fetch failing produces no error and no glyph geometry: every mesh syncs
+// "successfully" with nothing in it, and the entire text field renders blank
+// while the code looks correct. It reached a browser that could resolve
+// jsdelivr and one that could not, which is exactly why it read as "works for
+// me, invisible for you".
+//
+// configureTextBuilder is used rather than setting `mesh.font` per strand:
+// one call, before the first mesh is constructed, covering every strand and
+// every respawn — there is no path that can silently miss it.
+configureTextBuilder({ defaultFontURL: fontURL });
 
 // How hard the whale's absence is defended. The repulsion now applies at
 // every depth (see whale-field.ts), so this can be firm without any single
