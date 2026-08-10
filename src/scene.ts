@@ -7,7 +7,7 @@ import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { curl3D } from "./noise";
 import { buildWhaleSDF, whaleHalfExtents, WORLD_HALF_HEIGHT, WORLD_HALF_WIDTH, type SDFField } from "./sdf";
-import { whaleDistanceAt, whaleRepulsion, whaleSignedDistance } from "./whale-field";
+import { whaleDistanceAt, whaleDistanceScaleFor, whaleRepulsion, whaleSignedDistance } from "./whale-field";
 import { papers } from "./papers";
 
 gsap.registerPlugin(ScrollTrigger);
@@ -303,6 +303,12 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   // units below; because it sits at exactly `whaleDistance` from the camera —
   // the depth where whale space and world space coincide (see whale-field.ts)
   // — the silhouette's own half-extents are already its world size there.
+  // Holds the whale's apparent size steady across aspect ratios — without it
+  // a portrait phone gets a whale wider than its own viewport (see
+  // whaleDistanceScaleFor). Read once here and reused for both the repulsion
+  // cone and the glow, so the two cannot disagree.
+  const whaleDistanceScale = whaleDistanceScaleFor(canvas.clientWidth / canvas.clientHeight);
+
   const { halfWidth: whaleHalfWidth, halfHeight: whaleHalfHeight } = whaleHalfExtents();
   const glowMaterial = new THREE.MeshBasicMaterial({
     map: makeGlowTexture(),
@@ -344,7 +350,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     mesh.fillOpacity = 0;
     mesh.sync();
 
-    const whaleDistance = whaleDistanceAt(0);
+    const whaleDistance = whaleDistanceAt(0) * whaleDistanceScale;
     const depth = rand(RETIRE_LEAD, RETIRE_LEAD + LIFE_RANGE);
     const [x, y] = spawnClearOfWhale(sdf, depth, whaleDistance);
 
@@ -459,7 +465,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     fog.color.copy(tmpColor);
     renderer.setClearColor(tmpColor, 1);
 
-    const whaleDistance = whaleDistanceAt(p);
+    const whaleDistance = whaleDistanceAt(p) * whaleDistanceScale;
     const retireZ = camera.position.z - RETIRE_LEAD;
 
     // The whale sits on the camera's own axis at `whaleDistance` ahead — the

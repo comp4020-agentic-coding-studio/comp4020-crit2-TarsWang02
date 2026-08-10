@@ -24,6 +24,26 @@ export function whaleDistanceAt(p: number): number {
   return WHALE_DISTANCE_SURFACE + (WHALE_DISTANCE_EYE - WHALE_DISTANCE_SURFACE) * p;
 }
 
+// The distances above are calibrated against a landscape frustum, where the
+// whale reads as a shape: about a third of the half-screen width at the
+// surface, growing to fill the frame at the eye.
+//
+// A portrait viewport is far narrower in world units at the same distance, so
+// the identical whale spans 118% of the half-screen width at the *surface* and
+// 416% at the eye — never a silhouette on a phone, just a band running off
+// both edges, which is exactly the "no whale is visible" failure at 390×844.
+//
+// Pushing it further away on narrow viewports keeps its apparent size — and
+// therefore the whole negative-space read — the same at every aspect ratio.
+// Applied to the distance rather than the silhouette so the cone stays a cone
+// and every consumer of `whaleDistance` scales together automatically.
+const REFERENCE_ASPECT = 16 / 9;
+
+/** Distance multiplier that holds the whale's on-screen size across aspects. */
+export function whaleDistanceScaleFor(aspect: number): number {
+  return Math.max(1, REFERENCE_ASPECT / Math.max(aspect, 0.01));
+}
+
 // Below this distance in front of the lens a strand is treated as having no
 // whale to avoid: the cone has narrowed to nothing there, and dividing by a
 // vanishing depth would blow the scale up.

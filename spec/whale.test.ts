@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildWhaleSDF, sampleSDF } from "../src/sdf";
-import { whaleDistanceAt, whaleRepulsion, whaleSignedDistance } from "../src/whale-field";
+import { whaleDistanceAt, whaleDistanceScaleFor, whaleRepulsion, whaleSignedDistance } from "../src/whale-field";
 
 // The concept promises a whale you never see drawn, inferred only from the
 // text current bending around it. That only reads if the absence projects to
@@ -69,6 +69,31 @@ describe("whale exclusion is a cone from the camera", () => {
     // Far off-axis for this depth: outside the cone, so nothing should move.
     const [rx, ry] = whaleRepulsion(sdf, 7 * depth, 3 * depth, depth, whaleDistance, 1.2);
     expect(Math.hypot(rx, ry)).toBe(0);
+  });
+
+  it("keeps the whale's apparent width the same on a phone as on a desktop", () => {
+    // Both viewports are full marking environments. Uncorrected, the 390×844
+    // whale spanned 118% of the half-screen width at the surface and 416% at
+    // the eye — off both edges from the first frame, so no silhouette could
+    // ever read there. Apparent width is halfWidth / (distance·tan(fov/2)·
+    // aspect), so scaling distance by the aspect ratio cancels it exactly.
+    const fovHalfTan = Math.tan((55 / 2) * (Math.PI / 180));
+    const apparentWidth = (aspect: number, p: number): number => {
+      const distance = whaleDistanceAt(p) * whaleDistanceScaleFor(aspect);
+      return 1 / (distance * fovHalfTan * aspect);
+    };
+
+    for (const p of [0, 0.5, 1]) {
+      expect(apparentWidth(390 / 844, p)).toBeCloseTo(apparentWidth(1920 / 1080, p), 6);
+    }
+  });
+
+  it("never pulls the whale nearer than the landscape calibration", () => {
+    // The correction only ever pushes the whale further away. A wider-than-
+    // reference monitor must not drag it closer and blow it past the frame.
+    expect(whaleDistanceScaleFor(1920 / 1080)).toBe(1);
+    expect(whaleDistanceScaleFor(21 / 9)).toBe(1);
+    expect(whaleDistanceScaleFor(390 / 844)).toBeGreaterThan(1);
   });
 
   it("grows the whale's angular size as the dive closes on it", () => {
