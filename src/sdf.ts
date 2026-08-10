@@ -131,6 +131,22 @@ function isInside(polygon: Point[], px: number, py: number): boolean {
   return inside;
 }
 
+/**
+ * World-space half-extents of the whale silhouette, measured from the same
+ * flattened polygon the SDF is rasterised from — so anything sized off this
+ * (the glow in scene.ts) tracks the real shape rather than a second, hand-kept
+ * copy of its dimensions that could drift out of step with the outline.
+ */
+export function whaleHalfExtents(): { halfWidth: number; halfHeight: number } {
+  let halfWidth = 0;
+  let halfHeight = 0;
+  for (const [x, y] of whalePolygon()) {
+    halfWidth = Math.max(halfWidth, Math.abs(x));
+    halfHeight = Math.max(halfHeight, Math.abs(y));
+  }
+  return { halfWidth, halfHeight };
+}
+
 function gridToWorld(gx: number, gy: number): [number, number] {
   const x = ((gx + 0.5) / GRID_W) * (2 * WORLD_HALF_WIDTH) - WORLD_HALF_WIDTH;
   const y = ((gy + 0.5) / GRID_H) * (2 * WORLD_HALF_HEIGHT) - WORLD_HALF_HEIGHT;
