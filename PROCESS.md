@@ -29,9 +29,18 @@ from centre. Inside came back ~3× emptier at three points of the dive
 opinion
 ([`4922e25`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit2-TarsWang02/commit/4922e25)).
 
-**A stated cause I didn't accept.** A whole-scene blackout came to me
-diagnosed as a camera-vs-lifecycle geometry conflict. The geometry was wrong,
-but fixing it didn't clear the blackout: `clock.elapsedTime` jumps by the full
-pause when a backgrounded tab resumes, ageing every strand past its lifespan in
-one frame. Clamped `dt` accumulation fixed it
-([`71d0423...4922e25`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit2-TarsWang02/compare/71d0423...4922e25)).
+**The site was perfect on my machine and blank on his.** The report was that
+nothing rendered at all — no text, no whale. My screenshots showed a full
+field. Both were true, and the disagreement was the evidence: troika 0.52.5
+defaults its font to `null`, hands the worker an empty font list, and quietly
+falls back to fetching glyphs from `cdn.jsdelivr.net` at runtime. That fetch
+failing throws nothing — every mesh syncs "successfully" with no geometry. I
+could reach jsdelivr; he couldn't. A site about a Chinese AI lab had a hidden
+runtime dependency on a CDN that is unreliable from China.
+
+The instrumentation is what closed it: counting meshes whose geometry actually
+had vertices (`446/446` after the fix) instead of pixel-probing the canvas
+again. My first attempt at that count used troika's `sync()` callback and
+never fired at all, because those meshes were already synced — silence I'd
+have misread as proof of a dead field if I hadn't checked why
+([`a2ed248`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit2-TarsWang02/commit/a2ed248)).
