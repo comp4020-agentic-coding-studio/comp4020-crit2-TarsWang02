@@ -82,7 +82,13 @@ running counts as not green, so ship with time for CI to finish.
   [assessment page](https://comp.anu.edu.au/courses/comp4020-agentic-coding-studio/topics/assessment/#what-you-submit)
   for what counts as evidence.
 - **links** --- internal links must resolve. A broken link is a dead end you
-  didn't mean to ship.
+  didn't mean to ship. linkinator also crawls *outbound* links, and
+  `platform.deepseek.com` sits behind Cloudflare bot protection that 403s it —
+  a modern `--user-agent` doesn't help, since the HEAD request is fingerprinted
+  on more than the UA. `linkinator.config.json` downgrades **403 only** to a
+  warning: 403 means the server refused to answer, where a genuinely broken
+  link is a 404, which still fails. Don't "fix" this by `--skip`ping the host,
+  which would hide a real breakage there.
 - **secrets** --- the repo is scanned for committed credentials. Never put a
   key, token, or password in a tracked file. If one leaks, rotate it. A local
   pre-commit hook (`.githooks/pre-commit`, installed by `pnpm install`) also
