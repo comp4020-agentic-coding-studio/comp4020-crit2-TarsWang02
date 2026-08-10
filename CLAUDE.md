@@ -160,3 +160,137 @@ catching you out, a fact about the stack the agent keeps getting wrong --- write
 it down here. Growing this file is the work of harness engineering, and the gap
 between this boilerplate and your own version is part of what your prototype
 says about the developer you're becoming.
+
+## C2 concept: DeepSeek, redesigned
+
+Planned before any code was written, across a long design conversation outside
+this repo (not a single prompt --- the concept below was argued into shape
+through several rounds of reference-checking and refinement). This section is
+the brief for whichever session implements it. Read all of it before starting;
+the pieces depend on each other.
+
+**The organisation.** DeepSeek (deepseek.com) --- a real, significant
+open-source AI lab, genuinely rated: DeepSeek-V4-Flash was this course's own
+"what changed this week" story in the week 2 lecture. Liked for what they've
+shipped, not for their marketing site.
+
+**Cutoff: Wed 12 Aug, 12:00** (2h before the Yunlin Wed 14:00 session).
+
+**Why this target, specifically (surveyed against the field first, not picked
+first):** Anthropic (editorial serif, cream, restrained), OpenAI (black/white,
+product-first, minimal), Mistral (bold pixel-art "M", mosaic-tile background),
+and Moonshot AI (black void, glowing crescent, glitch wordmark) were all
+checked live. All four are already well-executed --- there's no credible "mine
+is better" argument against any of them, which the spec requires you to make.
+DeepSeek is the outlier: it has a real, specific mark (the whale/dolphin logo)
+and a disciplined single blue, but the actual site around them is a generic
+SaaS template --- gradient hero cards, no hierarchy, nothing that uses what the
+name or the mark already offer. The gap between "has real brand material" and
+"site does nothing with it" is the whole brief.
+
+### The concept
+
+DeepSeek's own name (深度求索, "deep exploration/search") and its whale/dolphin
+mark already contain an unused idea: **depth**. The current site never touches
+it. The redesign is built on taking that literally rather than decoratively.
+
+- **The whale is a shadow, not a drawing.** Nothing renders a whale outline.
+  Instead, the flowing text field (see below) is pushed away from a volume it
+  never enters --- the whale's presence is inferred entirely from how the
+  current bends, thins, and eddies around an absence. This is the Lovecraftian
+  register deliberately: awe from never fully resolving the thing, only its
+  effect on everything around it.
+- **The deep sea is made of real text, not particles.** The flowing medium is
+  DeepSeek's own published material --- paper titles and abstracts (DeepSeek-R1,
+  V3, Coder V2, VL, V2, Coder, Math, LLM are all real, published works, listed
+  on the current site's footer) --- rendered legibly and in motion, not as
+  decorative noise. This is not a style choice layered on top of the content
+  requirement; it *is* the content requirement. The spec demands real
+  information, restructured and rewritten --- here the real information is
+  the visual medium itself.
+- **Scrolling is descending.** The journey gets darker and denser, the
+  whale-absence grows nearer and larger (inferred, per above, never drawn),
+  until the visitor passes through its eye.
+- **The eye is the only transition in the whole site.** No tonal switch, no
+  separate "clean info" mode bolted on afterwards --- legible real content is
+  present from the first second, at every depth. What changes at the eye is
+  *which* real content surfaces: before it, the material is about depth ---
+  research, the papers themselves, what they've built. After it, the material
+  is about surface --- product (DeepSeek App, Chat, Platform, API + pricing),
+  how to reach them (Join Us / careers), the practical footer material (service
+  status, legal). Read as a story, not a mode switch: first *why it's deep*,
+  then *what to do with it*.
+
+### Implementation --- ranked, because not all of it will fit by Wednesday
+
+Build in this order and be honest in `PROCESS.md` about how far you actually
+got --- a smaller version of the real idea beats a rushed version of all of it.
+
+1. **Core and non-negotiable:** the text-flow field (real paper titles/abstracts
+   as the moving medium, genuinely legible) bending around an unrendered
+   whale-shaped volume. This is the idea; without it there's no concept, just a
+   dark website.
+2. **Second:** scroll-driven descent --- the field gets darker, denser, the
+   inferred shape grows as you scroll.
+3. **Third, and the first thing to simplify under time pressure:** the eye
+   transition. If a true mask/stencil portal effect doesn't fit, a simpler
+   iris-shaped clip-path reveal that still reads as "passing through" is an
+   honest fallback --- say so in `PROCESS.md` rather than hiding the cut corner.
+
+**Technique notes, so the how matches the idea instead of approximating it:**
+
+- The whale-as-absence effect is a **signed distance field (SDF)** problem: a
+  precomputed distance-field mask in the shape of a whale, which the text
+  field's flow reads to know what to avoid. This is the standard technique for
+  "define a presence by what avoids it" --- worth searching for directly
+  (SDF text/particle deflection) rather than reinvented from scratch.
+- Rendering large amounts of genuinely legible text in a moving WebGL scene is
+  a specific, solved problem --- **troika-three-text** (Three.js) exists
+  precisely because naive text-in-WebGL doesn't stay readable at speed or
+  scale. Don't hand-roll this.
+- The flow itself wants **curl noise** for motion that reads as current rather
+  than scatter.
+- Scroll-driven camera/scene changes: **Three.js + GSAP ScrollTrigger** for
+  real 3D camera control (this is what Oryzo AI, a recent Awwwards Site of the
+  Day by Lusion, uses for a comparable effect --- worth a look as a reference
+  point, not a template). A CSS-only `animation-timeline: scroll()` fallback
+  exists but can't drive a 3D scene the way GSAP can --- reach for GSAP first.
+- The eye transition is a **mask/clip-path reveal** --- an iris-shaped
+  `clip-path` that opens, or a WebGL stencil buffer for the fuller version.
+
+**On `frontend-design` skill:** worth invoking for the execution pass --- it's
+built to avoid generic AI-generated visual defaults, which is exactly the
+failure mode being designed against here.
+
+### Real content to build from (checked against the live site, not invented)
+
+- **Research** (real, citable): DeepSeek R1, V3, Coder V2, VL, V2, Coder, Math,
+  LLM --- all real published models/papers, currently just a flat footer link
+  list with no material around them.
+- **Product**: DeepSeek App, DeepSeek Chat, DeepSeek Platform, API Pricing,
+  Service Status.
+- **Reach them**: Join Us / careers page exists on the live site; legal
+  material (Privacy Policy, Terms, Report Vulnerabilities, Transparency) is
+  real and should be represented, if minimally, post-eye.
+- Current tagline worth keeping or answering directly: "探索未至之境" ("into the
+  unknown" / "exploring the uncharted") --- it's already reaching for the mood
+  this redesign commits to; the current site just never cashes it in visually.
+
+### Constraints from the spec (`crits/02-unsolicited-redesign`)
+
+- **Static, no backend, no logins** --- but unlike C1, **JavaScript is allowed**
+  this week (the spec says "static, no backend," not "no JS"); the whole
+  concept above depends on that being true. Astro is the course default stack,
+  but any static stack you can defend is fine, including a WebGL-heavy one
+  with no backend (Oryzo AI ships exactly that way).
+- Real content, restructured and rewritten, not pasted wholesale --- satisfied
+  structurally by the concept itself here, since the visual medium *is* real
+  content, but still cite sources in `PROCESS.md`.
+- Bring both sites side by side to the crit; be ready to name specifically what
+  DeepSeek's actual brand material is (the mark, the blue, the name's meaning)
+  and how the current site fails to use it.
+- The invariants (`spec/invariants.test.ts`) still apply underneath all of
+  this --- a real `<nav>`, one `<h1>` per page, alt text, a real title. A
+  visually ambitious site is not exempt from being a well-formed one; make
+  sure the semantic structure is real HTML underneath the WebGL canvas, not
+  only readable inside it.

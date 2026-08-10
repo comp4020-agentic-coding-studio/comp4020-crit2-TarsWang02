@@ -1,16 +1,228 @@
-body {
-  margin: 0;
-  padding: 2rem;
-  font-family: system-ui, sans-serif;
-  line-height: 1.6;
-  color: #1a1a1a;
+:root {
+  --deep-navy: #040814;
+  --current-blue: #4d6bfe;
+  --ink: #e8ecf7;
 }
 
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--deep-navy);
+  color: var(--ink);
+}
+
+body {
+  font-family:
+    "Source Serif 4",
+    Georgia,
+    serif;
+  line-height: 1.6;
+}
+
+#flow-field {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  display: block;
+}
+
+header,
 main {
+  position: relative;
+  z-index: 1;
+}
+
+header {
+  padding: 1.5rem 2rem;
+}
+
+nav[aria-label="Primary"] {
+  display: flex;
+  gap: 1.5rem;
+  font-family:
+    "JetBrains Mono",
+    ui-monospace,
+    monospace;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+}
+
+.hero {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 2rem;
   max-width: 40rem;
+  margin: 0 auto;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* A pure-CSS entrance, not a JS-driven one: it has to start the instant the
+   page paints, with no dependency on a script finishing (or even running) —
+   the headline is the first thing a reader sees, so it can't be left
+   invisible for however long anything on the main thread takes. `to` is left
+   implicit: it resolves to each element's own opacity (h1: 1, .tagline:
+   0.85) rather than duplicating it here. */
+@keyframes surface-in {
+  from {
+    opacity: 0;
+    transform: scale(0.15);
+  }
+}
+
+h1 {
+  font-size: clamp(2.5rem, 8vw, 5rem);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  margin: 0 0 1rem;
+  animation: surface-in 1.4s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
+}
+
+.tagline {
+  font-size: clamp(1rem, 2.5vw, 1.25rem);
+  opacity: 0.85;
+  max-width: 32rem;
+  margin: 0 auto;
+  animation: surface-in 1.4s cubic-bezier(0.16, 1, 0.3, 1) 0.5s both;
+}
+
+/* #depth's only visible job is to be tall: it's the scroll distance the dive
+   reads from (see the ScrollTrigger in src/scene.ts). Its real content is
+   the .paper-card markup below — present for the DOM, the a11y tree and the
+   spec's "real content" requirement, but never rendered on screen, so it
+   can't add a second, conflicting scroll motion on top of the canvas's own
+   Z-axis dive. The text the reader actually sees is the WebGL scene. */
+#depth {
+  position: relative;
+  height: 400vh;
+}
+
+.paper-card {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+#eye {
+  height: 220vh;
+  position: relative;
+}
+
+.iris {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  width: 100%;
+  background: #000103;
+  clip-path: circle(0% at 50% 50%);
+  z-index: 2;
+}
+
+#surface {
+  position: relative;
+  z-index: 1;
+  background: #000103;
+  padding: 12vh 1.5rem 4rem;
+  min-height: 100vh;
+}
+
+.surface-lede {
+  max-width: 34rem;
+  margin: 0 auto 4rem;
+  text-align: center;
+  font-size: clamp(1.1rem, 2.5vw, 1.4rem);
+  opacity: 0.85;
+}
+
+.surface-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1.25rem;
+  max-width: 56rem;
   margin: 0 auto;
 }
 
-a {
-  color: #0b5fff;
+.surface-card {
+  display: block;
+  padding: 1.5rem;
+  border: 1px solid rgb(77 107 254 / 30%);
+  border-radius: 4px;
+  color: var(--ink);
+  text-decoration: none;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+
+.surface-card:hover {
+  border-color: var(--current-blue);
+  background: rgb(77 107 254 / 8%);
+}
+
+.surface-card h2 {
+  font-size: 1.1rem;
+  font-weight: 500;
+  margin: 0 0 0.4rem;
+  color: var(--current-blue);
+}
+
+.surface-card p {
+  margin: 0;
+  opacity: 0.75;
+  font-size: 0.95rem;
+}
+
+.legal {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1.25rem 2rem;
+  max-width: 56rem;
+  margin: 5rem auto 0;
+  padding-top: 2rem;
+  border-top: 1px solid rgb(232 236 247 / 12%);
+  font-family:
+    "JetBrains Mono",
+    ui-monospace,
+    monospace;
+  font-size: 0.8rem;
+}
+
+.legal a {
+  color: var(--ink);
+  opacity: 0.6;
+  text-decoration: none;
+}
+
+/* Ordered by rising selector specificity from here down, per stylelint's
+   no-descending-specificity: plain-class links, then the attribute-selector
+   nav link, then each one's :hover (a pseudo-class outranks a bare class). */
+nav[aria-label="Primary"] a {
+  color: var(--ink);
+  text-decoration: none;
+  opacity: 0.75;
+  transition: opacity 0.2s ease;
+}
+
+.legal a:hover {
+  opacity: 1;
+  color: var(--current-blue);
+}
+
+nav[aria-label="Primary"] a:hover {
+  opacity: 1;
+  color: var(--current-blue);
 }

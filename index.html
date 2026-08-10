@@ -1,24 +1,87 @@
 <!doctype html>
-<html lang="en-AU">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>COMP4020 prototype</title>
+    <title>DeepSeek — 探索未至之境</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <canvas id="flow-field" aria-hidden="true"></canvas>
+
     <header>
       <nav aria-label="Primary">
-        <a href="./">Home</a>
+        <a href="#depth">Research</a>
+        <a href="#surface">Product</a>
+        <a href="https://www.deepseek.com/" target="_blank" rel="noopener">deepseek.com ↗</a>
       </nav>
     </header>
+
     <main>
-      <h1>COMP4020 prototype</h1>
-      <p data-testid="intro">
-        Replace this with your prototype. This week's brief is on the course website;
-        <code>spec/README.md</code> explains how the checks in this repo relate to it.
-      </p>
+      <section class="hero">
+        <h1>探索未至之境</h1>
+        <p class="tagline">
+          Into the unknown — DeepSeek's own line. The current below is real: DeepSeek's own published
+          research, in motion, bending around a shape it never shows you.
+        </p>
+      </section>
+
+      <section id="depth" aria-label="Research"></section>
+
+      <section id="eye" aria-hidden="true"><div class="iris"></div></section>
+
+      <section id="surface" aria-label="Product">
+        <p class="surface-lede">
+          What DeepSeek built is above. What to do with it is here — the App, the API, and how to
+          reach the people who make it.
+        </p>
+
+        <div class="surface-grid">
+          <a class="surface-card" href="https://download.deepseek.com/app/" target="_blank" rel="noopener">
+            <h2>DeepSeek App</h2>
+            <p>The mobile and desktop client.</p>
+          </a>
+          <a class="surface-card" href="https://chat.deepseek.com" target="_blank" rel="noopener">
+            <h2>DeepSeek Chat</h2>
+            <p>Talk to the latest model in the browser.</p>
+          </a>
+          <a class="surface-card" href="https://platform.deepseek.com" target="_blank" rel="noopener">
+            <h2>Platform</h2>
+            <p>The API, for building on top of it.</p>
+          </a>
+          <a
+            class="surface-card"
+            href="https://api-docs.deepseek.com/zh-cn/quick_start/pricing"
+            target="_blank"
+            rel="noopener"
+          >
+            <h2>API Pricing</h2>
+            <p>What it costs to call.</p>
+          </a>
+          <a class="surface-card" href="https://status.deepseek.com" target="_blank" rel="noopener">
+            <h2>Service Status</h2>
+            <p>Whether it's up right now.</p>
+          </a>
+          <a class="surface-card" href="https://talent.deepseek.com" target="_blank" rel="noopener">
+            <h2>Join Us</h2>
+            <p>Open roles at DeepSeek.</p>
+          </a>
+        </div>
+
+        <footer class="legal">
+          <a href="https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html" target="_blank" rel="noopener"
+            >Privacy Policy</a
+          >
+          <a href="https://cdn.deepseek.com/policies/en-US/deepseek-terms-of-use.html" target="_blank" rel="noopener"
+            >Terms of Use</a
+          >
+          <a href="mailto:security@deepseek.com">Report a Vulnerability</a>
+          <a href="https://www.deepseek.com/transparency/" target="_blank" rel="noopener">Transparency</a>
+          <a href="https://www.deepseek.com/" target="_blank" rel="noopener">deepseek.com ↗</a>
+        </footer>
+      </section>
     </main>
+
     <script type="module" src="./main.ts"></script>
   </body>
 </html>
