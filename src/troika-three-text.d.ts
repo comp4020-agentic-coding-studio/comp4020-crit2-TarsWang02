@@ -12,6 +12,9 @@ declare module "troika-three-text" {
     anchorY: "top" | "top-baseline" | "middle" | "bottom-baseline" | "bottom" | number;
     letterSpacing: number;
     outlineWidth: number | string;
+    outlineBlur: number | string;
+    outlineColor: number | string;
+    outlineOpacity: number;
     fillOpacity: number;
     maxWidth: number;
     sync(callback?: () => void): void;

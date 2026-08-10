@@ -6,7 +6,7 @@ import fontURL from "@fontsource/source-serif-4/files/source-serif-4-latin-400-n
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { curl3D } from "./noise";
-import { buildWhaleSDF, WORLD_HALF_HEIGHT, WORLD_HALF_WIDTH, type SDFField } from "./sdf";
+import { buildWhaleSDF, whaleHalfExtents, WORLD_HALF_HEIGHT, WORLD_HALF_WIDTH, type SDFField } from "./sdf";
 import { whaleDistanceAt, whaleRepulsion, whaleSignedDistance } from "./whale-field";
 import { papers } from "./papers";
 
@@ -81,9 +81,47 @@ const INITIAL_STAGGER = 5;
 const DEEP_NAVY = 0x040814;
 const CURRENT_BLUE = 0x4d6bfe;
 
-const FADE_IN_DURATION = 1.5;
-const FADE_OUT_DURATION = 2.2;
-const BIRTH_SCALE_START = 0.2;
+// A strand's whole life is one arc, driven off its own normalised lifeT so
+// the three phases are guaranteed to meet: arriving (small, faint, soft) →
+// peak (full scale, full opacity, sharp — the readable window the concept
+// depends on) → retiring (swelling past peak, fading, going soft again, as if
+// passing too close to the lens to hold focus).
+//
+// Previously scale was driven by the fade-in alone and opacity by a separate
+// fade-in × fade-out, so scale pinned at 1 for the rest of the strand's life
+// and the exit had no softness at all. Two one-sided curves that were never
+// designed to meet is exactly why they drifted apart.
+const BIRTH_PHASE = 0.16; // fraction of life spent arriving
+const RETIRE_PHASE = 0.3; // fraction spent passing the lens
+const BIRTH_SCALE = 0.3; // far off, just arriving
+const RETIRE_SCALE = 2.1; // swollen, passing close
+
+// troika has no per-glyph fill blur: `outlineBlur` blurs a drawn *outline*,
+// not the glyph fill, and real depth of field needs a postprocessing pass
+// that is too big a risk this close to the deadline. So this is a deliberate
+// fake, not true blur — as a strand leaves the readable window its sharp fill
+// fades out while a blurred outline of the same colour fades in, leaving a
+// soft glow where the letterforms were. Paired with the scale change (small
+// at birth, oversized at retirement) the two together read as defocus.
+const MAX_DEFOCUS_BLUR = "22%"; // of fontSize, at full defocus
+const MAX_DEFOCUS_GLOW = 0.5; // outline opacity at full defocus
+const USE_DEFOCUS_OUTLINE = true;
+// A floor under the negative-space read.
+//
+// The absence is still the idea: the text genuinely bends around a volume it
+// never enters, and that mechanic is untouched. But an absence is a weak
+// signal — it depends on the field being dense enough, at the right depths,
+// for a hole to have an edge — and two rounds of work on it have not produced
+// something reliably visible. So this adds one positive signal underneath:
+// a soft glow at the whale's own projected position and apparent size, in
+// DeepSeek's actual brand blue rather than a generic accent. It is sized from
+// the same cone projection the text repulsion uses, so if the geometry is ever
+// wrong the glow is wrong in exactly the same way and the disagreement between
+// hole and glow is itself diagnostic.
+const GLOW_OPACITY_SURFACE = 0.06;
+const GLOW_OPACITY_EYE = 0.36;
+const GLOW_SPREAD = 1.6; // how far the falloff reaches past the silhouette
+
 const NOISE_FREQ = 0.16;
 const FLOW_SPEED = 0.75;
 const SPRING_K = 0.5;
@@ -147,6 +185,68 @@ function pick<T>(items: readonly T[]): T {
   return items[Math.floor(Math.random() * items.length)]!;
 }
 
+/** Hermite ease on an already-clamped 0..1 value. */
+function smoothstep(x: number): number {
+  return x * x * (3 - 2 * x);
+}
+
+export interface StrandArc {
+  /** 1 through the readable middle, 0 at both ends of life. */
+  focus: number;
+  /** Below 1 arriving, exactly 1 at peak, above 1 while retiring. */
+  scale: number;
+}
+
+/**
+ * The whole birth → peak → retirement arc as one pure function of the
+ * strand's own normalised age.
+ *
+ * Extracted so it can be tested: the recurring failure here has been the
+ * phases drifting apart (scale driven off one curve, opacity off another, the
+ * two never designed to meet), which is invisible in a screenshot and obvious
+ * in an assertion. `arrive` and `linger` are deliberately derived from the one
+ * `lifeT` so the middle is guaranteed to be both fully arrived and not yet
+ * retiring.
+ */
+export function strandArc(lifeT: number): StrandArc {
+  const arrive = smoothstep(Math.min(Math.max(lifeT / BIRTH_PHASE, 0), 1));
+  const linger = smoothstep(Math.min(Math.max((1 - lifeT) / RETIRE_PHASE, 0), 1));
+  return {
+    focus: Math.min(arrive, linger),
+    // Multiplied, not blended: at peak both terms are exactly 1, so each end
+    // owns its own half of the arc without fighting the other.
+    scale: (BIRTH_SCALE + (1 - BIRTH_SCALE) * arrive) * (1 + (RETIRE_SCALE - 1) * (1 - linger)),
+  };
+}
+
+/**
+ * A radial falloff, built as raw pixel data rather than drawn on a 2D canvas
+ * so the scene has no dependency on a canvas context it doesn't otherwise
+ * need. White with a soft alpha ramp; the colour comes from the material, so
+ * the brand blue lives in exactly one place.
+ */
+function makeGlowTexture(): THREE.DataTexture {
+  const size = 64;
+  const data = new Uint8Array(size * size * 4);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const nx = ((x + 0.5) / size) * 2 - 1;
+      const ny = ((y + 0.5) / size) * 2 - 1;
+      const falloff = Math.max(0, 1 - Math.hypot(nx, ny));
+      const i = (y * size + x) * 4;
+      data[i] = 255;
+      data[i + 1] = 255;
+      data[i + 2] = 255;
+      // Squared on top of the ease so the centre stays concentrated and the
+      // edge dissolves, rather than reading as a flat disc with a hard rim.
+      data[i + 3] = Math.round(smoothstep(falloff) * falloff * 255);
+    }
+  }
+  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  texture.needsUpdate = true;
+  return texture;
+}
+
 /**
  * A spawn point clear of the whale's projected footprint at this strand's own
  * depth. Rejection sampling: cheaper and more legible than solving the cone
@@ -198,6 +298,27 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
 
   const sdf = buildWhaleSDF();
 
+  // Additive so it reads as light in water rather than a painted shape, and
+  // depthWrite off so the text field still sorts through it. Sized in world
+  // units below; because it sits at exactly `whaleDistance` from the camera —
+  // the depth where whale space and world space coincide (see whale-field.ts)
+  // — the silhouette's own half-extents are already its world size there.
+  const { halfWidth: whaleHalfWidth, halfHeight: whaleHalfHeight } = whaleHalfExtents();
+  const glowMaterial = new THREE.MeshBasicMaterial({
+    map: makeGlowTexture(),
+    color: CURRENT_BLUE,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+  });
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), glowMaterial);
+  // Drawn before the text so strands read as suspended in the light, not
+  // washed over by it.
+  glow.renderOrder = -1;
+  glow.scale.set(whaleHalfWidth * 2 * GLOW_SPREAD, whaleHalfHeight * 2 * GLOW_SPREAD, 1);
+  scene.add(glow);
+
   function makeStrand(isReader: boolean, staggeredBirth: boolean): Strand {
     const mesh = new Text();
     if (isReader) {
@@ -213,7 +334,13 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     mesh.anchorX = "center";
     mesh.anchorY = "middle";
     mesh.letterSpacing = 0.01;
+    // No drawn outline — the outline channel is used purely as the blurred
+    // stand-in for defocus at both ends of life (see MAX_DEFOCUS_BLUR), so it
+    // matches the fill colour and is driven entirely from the tick.
     mesh.outlineWidth = 0;
+    mesh.outlineColor = CURRENT_BLUE;
+    mesh.outlineOpacity = 0;
+    mesh.outlineBlur = 0;
     mesh.fillOpacity = 0;
     mesh.sync();
 
@@ -335,19 +462,27 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     const whaleDistance = whaleDistanceAt(p);
     const retireZ = camera.position.z - RETIRE_LEAD;
 
+    // The whale sits on the camera's own axis at `whaleDistance` ahead — the
+    // same anchor the repulsion cone is built from, so the glow and the hole
+    // can never disagree about where the whale is. It grows on screen as the
+    // dive closes because the distance shrinks, not because it is scaled up.
+    glow.position.set(0, 0, camera.position.z - whaleDistance);
+    glowMaterial.opacity = THREE.MathUtils.lerp(GLOW_OPACITY_SURFACE, GLOW_OPACITY_EYE, p);
+
     for (const strand of strands) {
       const age = t - strand.birthTime;
       if (age >= strand.lifespan) {
         respawn(strand, t, whaleDistance);
+        // Both channels, or the retiring strand's defocus glow flashes for a
+        // frame at its reborn position before the arc takes over.
         strand.mesh.fillOpacity = 0;
+        strand.mesh.outlineOpacity = 0;
         continue;
       }
 
       const lifeT = age / strand.lifespan;
-      const fadeIn = THREE.MathUtils.clamp(age / FADE_IN_DURATION, 0, 1);
-      const fadeOut = THREE.MathUtils.clamp((strand.lifespan - age) / FADE_OUT_DURATION, 0, 1);
-      const eased = fadeIn * fadeIn * (3 - 2 * fadeIn);
-      const lifeAlpha = eased * (fadeOut * fadeOut * (3 - 2 * fadeOut));
+
+      const { focus, scale } = strandArc(lifeT);
 
       // Depth is a distance in front of the moving retirement plane, easing
       // from the far end of the band to zero across the strand's life.
@@ -370,11 +505,22 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       strand.z = baseZ + cz * Z_WOBBLE_AMOUNT;
 
       strand.mesh.position.set(strand.x, strand.y, strand.z);
-      strand.mesh.scale.setScalar(THREE.MathUtils.lerp(BIRTH_SCALE_START, 1, eased));
+
+      strand.mesh.scale.setScalar(scale);
 
       const distance = camera.position.distanceTo(strand.mesh.position);
       const depthFade = THREE.MathUtils.clamp(1 - (distance - NEAR_DIST) / (FAR_DIST - NEAR_DIST), 0.03, 1);
-      strand.mesh.fillOpacity = strand.baseOpacity * depthFade * lifeAlpha;
+      const visible = strand.baseOpacity * depthFade;
+
+      // Sharp fill in the readable window; a soft blurred glow of the same
+      // colour taking its place at both ends. See MAX_DEFOCUS_BLUR above —
+      // this is a stand-in for defocus, not real blur.
+      const defocus = 1 - focus;
+      strand.mesh.fillOpacity = visible * focus;
+      if (USE_DEFOCUS_OUTLINE) {
+        strand.mesh.outlineOpacity = visible * defocus * MAX_DEFOCUS_GLOW;
+        strand.mesh.outlineBlur = defocus === 0 ? 0 : MAX_DEFOCUS_BLUR;
+      }
     }
 
     renderer.render(scene, camera);
