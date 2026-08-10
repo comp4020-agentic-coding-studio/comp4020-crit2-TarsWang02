@@ -1,85 +1,37 @@
 # Process overview
 
-<!-- TEMPLATE: this file is a shape to fill in, not a form. Replace everything
-     in it with your own overview, and delete this comment — `pnpm
-     check:evidence` will remind you if it's still here. -->
-
-A reading-guide to how the work came together --- a map to your process, not an
-essay about it. Markers read this file and follow its citations; they don't
-trawl the repo for evidence you didn't point at, so if a moment mattered, cite
-it.
-
-This file is the shape; the course site's
-[assessment page](https://comp.anu.edu.au/courses/comp4020-agentic-coding-studio/topics/assessment/#what-you-submit)
-is the requirement, and its
-[word counts](https://comp.anu.edu.au/courses/comp4020-agentic-coding-studio/topics/assessment/#word-counts)
-cover every deliverable.
-
 ## What I built
 
-One paragraph: the thing, and the idea behind it.
+A redesign of deepseek.com as a descent. You scroll down through a volume of
+DeepSeek's own published research — real paper titles and my own factual
+rewrites of what each one did — and the text current bends around a whale that
+is never drawn. Its presence is only ever inferred from the hole it leaves.
 
 ## The moments that mattered
 
-Three or four for an assignment; fewer is fine for a weekly prototype. Keep the
-list short so each moment has room to do all four jobs:
+**The whale wasn't there, and I couldn't tell.** Three rounds of moving
+constants had produced a scene I could squint at and believe in. The real fault
+was structural: the exclusion was gated to a slab of depth around a fixed world
+`z` while the strand band was camera-relative, so most of the field never saw
+the whale. I put both in one frame and made the exclusion a **cone from the
+camera** rather than a tube — a tube projects to a different screen region at
+each depth, so the edge smears; a cone projects to one, so every layer
+reinforces the same outline.
 
-1. **what happened** --- the problem, or the thing the agent got wrong
-2. **what you did instead of the obvious thing** --- the call you made, and why
-   it beat the obvious one
-3. **how you knew it was right** --- the check you ran, the viewport you looked
-   at, what you read before accepting the diff
-4. **the citation** --- a commit or commit range, a `CLAUDE.md` change, a check
-   that went from red to green, a prompt paired with the commit it produced
+What settled it was building sensors instead of trusting my eyes.
+`spec/whale.test.ts` asserts the footprint is depth-independent and that
+repulsion is non-zero at every depth; it fails against the old gated version.
+That proves the geometry is coherent, not that anything is *visible*, so
+`scripts/probe-whale.js` reads the canvas back and compares pixel density
+inside the whale's projected footprint against open water at the same distance
+from centre. Inside came back ~3× emptier at three points of the dive
+(0.29 / 0.35 / 0.29). Before that number existed, "is there a whale" was an
+opinion
+([`4922e25`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit2-TarsWang02/commit/4922e25)).
 
-Jobs 2 and 3 are the ones the repo can't tell a reader on its own, so they're
-where the marks are. The strongest moments are the ones where a correction
-landed in the **harness** rather than in another prompt --- a rule added to
-`CLAUDE.md`, a check wired up, an attempt thrown away: re-prompting until it
-passes is the routine case, and changing what the agent works against is the
-skilled one.
-
-Cite each moment as a link whose text is the commit hash or range and whose
-target is this repo's commit or compare URL, so a reader clicks straight to the
-evidence:
-
-- one commit: [`a1b2c3d`](https://github.com/YOUR-ORG/YOUR-REPO/commit/a1b2c3d)
-- a range:
-  [`a1b2c3d...e4f5a6b`](https://github.com/YOUR-ORG/YOUR-REPO/compare/a1b2c3d...e4f5a6b)
-
-To pair a prompt with the commit it produced, quote the prompt (curated, not a
-full transcript) next to the citation:
-
-> the prompt, verbatim
-
-Screenshots are welcome where one carries the verification better than a
-sentence does. Commit the file to this repo and link it with a **relative**
-path, which is what makes it render on GitHub: `![alt text](docs/before.png)`.
-Images don't count towards the word count and don't replace the citation.
-
-### A worked moment, for shape
-
-Delete this section along with the rest of the boilerplate --- it's here to show
-the four jobs in one paragraph, not to be imitated in content.
-
-> The date formatter kept coming back with `toLocaleDateString()` and no locale
-> argument, so the same build rendered differently on my machine and in CI. I'd
-> already re-prompted it twice, which fixed the line but not the habit, so the
-> third time I put the rule in `CLAUDE.md` instead
-> ([`3f9ac21`](https://github.com/YOUR-ORG/YOUR-REPO/commit/3f9ac21)) and added
-> a spec test that fails on a bare `toLocaleDateString`. That's what told me it
-> had actually taken: the test went red against the old code and green against
-> the new, and the next two features it wrote passed it without prompting
-> ([`3f9ac21...b7e0d14`](https://github.com/YOUR-ORG/YOUR-REPO/compare/3f9ac21...b7e0d14)).
-
-## Before you ship
-
-`pnpm check:evidence` verifies your citations resolve to real commits, that the
-current reflection entry is in `reflections/`, and that your `CLAUDE.md` is
-there --- before a marker ever opens the file. It checks that your map is
-traceable, not that it is good: the marker judges whether your small,
-deliberately chosen set of moments shows real judgement and reflection. A green
-check is not a substitute for that curation.
-
-Images are deliberately not checked, because whether one renders is visible the
-moment you look. Open this file on GitHub and look at it before you ship.
+**A stated cause I didn't accept.** A whole-scene blackout came to me
+diagnosed as a camera-vs-lifecycle geometry conflict. The geometry was wrong,
+but fixing it didn't clear the blackout: `clock.elapsedTime` jumps by the full
+pause when a backgrounded tab resumes, ageing every strand past its lifespan in
+one frame. Clamped `dt` accumulation fixed it
+([`71d0423...4922e25`](https://github.com/comp4020-agentic-coding-studio/comp4020-crit2-TarsWang02/compare/71d0423...4922e25)).
