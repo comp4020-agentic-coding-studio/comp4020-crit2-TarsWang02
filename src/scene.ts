@@ -6,7 +6,7 @@ import fontURL from "@fontsource/source-serif-4/files/source-serif-4-latin-400-n
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { curl3D } from "./noise";
-import { buildWhaleSDF, whaleHalfExtents, WORLD_HALF_HEIGHT, WORLD_HALF_WIDTH, type SDFField } from "./sdf";
+import { buildWhaleSDF, WORLD_HALF_HEIGHT, WORLD_HALF_WIDTH, type SDFField } from "./sdf";
 import { whaleDistanceAt, whaleDistanceScaleFor, whaleRepulsion, whaleSignedDistance } from "./whale-field";
 import { papers } from "./papers";
 
@@ -91,7 +91,13 @@ const READER_START_MIN = 0.03;
 const READER_START_MAX = 0.72;
 const READER_ARC_SPAN_MIN = 0.22; // a wide span: a slow, deliberate arrival and exit
 const READER_ARC_SPAN_MAX = 0.3;
-const MOTE_START_MIN = 0.015;
+// 0, not a small positive value: a portion of motes should already be
+// mid-arc the instant the reader starts scrolling at all, so the ambient
+// "sea surface" texture has some immediate density rather than a beat of
+// nothing before the field ramps up. Readers still start well after 0 —
+// only the ambient layer, not the main content, is present from the first
+// scroll.
+const MOTE_START_MIN = 0;
 const MOTE_START_MAX = 0.92;
 const MOTE_ARC_SPAN_MIN = 0.05; // texture: quick, numerous, felt rather than tracked
 const MOTE_ARC_SPAN_MAX = 0.09;
@@ -107,8 +113,8 @@ const MOTE_ARC_SPAN_MAX = 0.09;
 // into real words from real DeepSeek research.
 const READERS_FULL = 26;
 const READERS_COMPACT = 12;
-const MOTES_FULL = 420;
-const MOTES_COMPACT = 150;
+const MOTES_FULL = 520; // raised from 420 — the sea surface reads too sparse at the old count
+const MOTES_COMPACT = 190;
 
 const DEEP_NAVY = 0x040814;
 const CURRENT_BLUE = 0x4d6bfe;
@@ -165,26 +171,18 @@ const MAX_DEFOCUS_GLOW = 0.5; // outline opacity at full defocus
 const USE_DEFOCUS_OUTLINE = true;
 // A floor under the negative-space read.
 //
-// The absence is still the idea: the text genuinely bends around a volume it
-// never enters, and that mechanic is untouched. But an absence is a weak
-// signal — it depends on the field being dense enough, at the right depths,
-// for a hole to have an edge — and two rounds of work on it have not produced
-// something reliably visible. So this adds one positive signal underneath:
-// a soft glow at the whale's own projected position and apparent size, in
-// DeepSeek's actual brand blue rather than a generic accent. It is sized from
-// the same cone projection the text repulsion uses, so if the geometry is ever
-// wrong the glow is wrong in exactly the same way and the disagreement between
-// hole and glow is itself diagnostic.
-// Two rounds of raising this from 0.06 (invisible) to 0.22 (still reported
-// invisible against a dense, brightly-lit text field) — the glow was losing a
-// brightness contest against the reader/mote population around it, not just
-// being generically too dim. Pushed further and the additive falloff spread
-// wider (GLOW_SPREAD) so the whale reads as an unmissable presence rather
-// than something to hunt for. GLOW_OPACITY_EYE keeps a growth ratio (~2x)
-// so it still reads as closing in, not switching on abruptly at the eye.
+// The absence (text genuinely bending around a volume it never enters) is
+// still there and untouched, but three rounds of relying on it alone did not
+// produce something reliably visible — it depends on the field being dense
+// enough, at the right depth, for a hole to have a legible edge, which is
+// hard to guarantee. So the whale is now also drawn directly: see
+// makeWhaleTexture above, which rasterises the exact same SDF the text
+// repulsion reads, in DeepSeek's actual brand blue. It is positioned from the
+// same cone projection the repulsion uses (see the tick loop), so the drawn
+// shape and the hole it sits over can never disagree about where the whale
+// is.
 const GLOW_OPACITY_SURFACE = 0.4;
 const GLOW_OPACITY_EYE = 0.85;
-const GLOW_SPREAD = 2.2; // how far the falloff reaches past the silhouette
 
 const NOISE_FREQ = 0.16;
 const FLOW_SPEED = 0.75;
@@ -256,6 +254,28 @@ function smoothstep(x: number): number {
   return x * x * (3 - 2 * x);
 }
 
+const HERO_FADE_IN = 0.05; // fraction of the dive spent arriving
+const HERO_FADE_OUT = 0.15; // fraction spent leaving, ending exactly at the eye
+const HERO_BREATHE_CYCLES = 6; // gentle oscillations across the dive — "keeps refreshing"
+const HERO_BREATHE_DEPTH = 0.15; // how far the breathing dips below full opacity
+
+/**
+ * The hero statement's own opacity as a pure function of dive progress `p`.
+ *
+ * It is not static content: 0 before the reader scrolls at all (the surface
+ * is just water), fading in quickly once they do, then breathing gently
+ * through the reading section — a slow, continuous oscillation rather than a
+ * single fade, so it reads as alive and present rather than a one-off
+ * entrance — before fading out over the approach to the eye, so the
+ * transition there isn't competing with it.
+ */
+export function heroPulseOpacity(p: number): number {
+  const fadeIn = smoothstep(Math.min(Math.max(p / HERO_FADE_IN, 0), 1));
+  const fadeOut = smoothstep(Math.min(Math.max((1 - p) / HERO_FADE_OUT, 0), 1));
+  const breathe = 1 - HERO_BREATHE_DEPTH * (0.5 - 0.5 * Math.cos(p * Math.PI * 2 * HERO_BREATHE_CYCLES));
+  return fadeIn * fadeOut * breathe;
+}
+
 export interface StrandArc {
   /** 1 through the readable middle, 0 at both ends of life. */
   focus: number;
@@ -304,29 +324,35 @@ export function strandArc(lifeT: number, timing: ArcTiming): StrandArc {
 }
 
 /**
- * A radial falloff, built as raw pixel data rather than drawn on a 2D canvas
- * so the scene has no dependency on a canvas context it doesn't otherwise
- * need. White with a soft alpha ramp; the colour comes from the material, so
- * the brand blue lives in exactly one place.
+ * The whale, actually drawn — not just its exclusion field.
+ *
+ * Two rounds of relying on absence alone (the text-flow bending around an
+ * unrendered volume) did not produce something reliably visible: it depends
+ * on the field being dense enough, at the right depth, for a hole to have a
+ * legible edge, and that legibility is hard to guarantee across viewports and
+ * scroll speeds. This renders the same silhouette directly instead — built
+ * straight from `sdf`'s own distance grid, so it is pixel-for-pixel the exact
+ * shape the text already bends around, not a second hand-kept copy that could
+ * drift out of sync with it. Deep inside the silhouette (very negative
+ * distance) is fully opaque; the boundary softens over `EDGE_SOFTNESS` grid
+ * cells so the edge glows rather than cutting hard, in keeping with "seen
+ * through a current" rather than a stencil.
  */
-function makeGlowTexture(): THREE.DataTexture {
-  const size = 64;
-  const data = new Uint8Array(size * size * 4);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const nx = ((x + 0.5) / size) * 2 - 1;
-      const ny = ((y + 0.5) / size) * 2 - 1;
-      const falloff = Math.max(0, 1 - Math.hypot(nx, ny));
-      const i = (y * size + x) * 4;
-      data[i] = 255;
-      data[i + 1] = 255;
-      data[i + 2] = 255;
-      // Squared on top of the ease so the centre stays concentrated and the
-      // edge dissolves, rather than reading as a flat disc with a hard rim.
-      data[i + 3] = Math.round(smoothstep(falloff) * falloff * 255);
-    }
+const EDGE_SOFTNESS = 5; // grid cells of soft falloff at the silhouette's edge
+function makeWhaleTexture(sdf: SDFField): THREE.DataTexture {
+  const { width, height, data } = sdf;
+  const rgba = new Uint8Array(width * height * 4);
+  for (let i = 0; i < width * height; i++) {
+    const distance = data[i]!; // grid cells; negative = inside the silhouette
+    const t = THREE.MathUtils.clamp(1 - distance / EDGE_SOFTNESS, 0, 1);
+    const alpha = smoothstep(t);
+    const idx = i * 4;
+    rgba[idx] = 255;
+    rgba[idx + 1] = 255;
+    rgba[idx + 2] = 255;
+    rgba[idx + 3] = Math.round(alpha * 255);
   }
-  const texture = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
+  const texture = new THREE.DataTexture(rgba, width, height, THREE.RGBAFormat);
   texture.needsUpdate = true;
   return texture;
 }
@@ -394,20 +420,23 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     return { startP, arcSpan };
   }
 
-  // Additive so it reads as light in water rather than a painted shape, and
-  // depthWrite off so the text field still sorts through it. Sized in world
-  // units below; because it sits at exactly `whaleDistance` from the camera —
-  // the depth where whale space and world space coincide (see whale-field.ts)
-  // — the silhouette's own half-extents are already its world size there.
+  // Additive so it reads as light in water rather than a flat painted shape,
+  // and depthWrite off so the text field still sorts through it. Sized in
+  // world units below; because it sits at exactly `whaleDistance` from the
+  // camera — the depth where whale space and world space coincide (see
+  // whale-field.ts) — the SDF grid's own world footprint (WORLD_HALF_WIDTH ×
+  // WORLD_HALF_HEIGHT) is already the plane's correct world size there, with
+  // no extra spread factor needed: the texture itself already carries the
+  // silhouette's soft edge (see makeWhaleTexture/EDGE_SOFTNESS), so scaling
+  // the plane up would just add empty margin, not more glow.
   // Holds the whale's apparent size steady across aspect ratios — without it
   // a portrait phone gets a whale wider than its own viewport (see
   // whaleDistanceScaleFor). Read once here and reused for both the repulsion
-  // cone and the glow, so the two cannot disagree.
+  // cone and this plane, so the two cannot disagree.
   const whaleDistanceScale = whaleDistanceScaleFor(canvas.clientWidth / canvas.clientHeight);
 
-  const { halfWidth: whaleHalfWidth, halfHeight: whaleHalfHeight } = whaleHalfExtents();
   const glowMaterial = new THREE.MeshBasicMaterial({
-    map: makeGlowTexture(),
+    map: makeWhaleTexture(sdf),
     color: CURRENT_BLUE,
     transparent: true,
     blending: THREE.AdditiveBlending,
@@ -418,7 +447,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   // Drawn before the text so strands read as suspended in the light, not
   // washed over by it.
   glow.renderOrder = -1;
-  glow.scale.set(whaleHalfWidth * 2 * GLOW_SPREAD, whaleHalfHeight * 2 * GLOW_SPREAD, 1);
+  glow.scale.set(WORLD_HALF_WIDTH * 2, WORLD_HALF_HEIGHT * 2, 1);
   scene.add(glow);
 
   function makeStrand(isReader: boolean): Strand {
@@ -491,6 +520,13 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   resize();
   window.addEventListener("resize", resize);
 
+  // Owned here rather than by its old CSS @keyframes entrance: the hero
+  // statement is no longer static content shown once at load, it recurs
+  // through the dive (see heroPulseOpacity), and `.hero` is now `position:
+  // fixed` (see styles.css) so it stays in view to recur in, rather than
+  // scrolling away with the page.
+  const heroEl = document.querySelector<HTMLElement>(".hero");
+
   // One continuous dive spanning the whole research read plus the eye, so the
   // descent plays out across the entire scroll rather than as a burst in the
   // final transition.
@@ -527,6 +563,8 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     const dt = Math.min(clock.getDelta(), 1 / 30);
     t += dt;
     const p = diveProgress;
+
+    if (heroEl) heroEl.style.opacity = String(heroPulseOpacity(p));
 
     const [jx, jy] = curl3D(t * CAMERA_JITTER_SPEED, 41.3, 87.6);
     camera.position.set(

@@ -54,29 +54,29 @@ nav[aria-label="Primary"] {
   letter-spacing: 0.02em;
 }
 
+/* Fixed, not in document flow: this is the thesis statement, meant to recur
+   through the dive rather than sit once at the top of the page and scroll
+   away. Its opacity is owned entirely by scene.ts's tick loop (see
+   heroPulseOpacity there) — 0 at dive progress 0 (nothing shows before the
+   reader scrolls), fading in, breathing gently through the reading section,
+   and fading out approaching the eye. The inline `opacity: 0` here is the
+   fail-safe default before the scene's first frame runs, not an animation. */
 .hero {
-  min-height: 100vh;
+  position: fixed;
+  inset: 0;
   display: flex;
   flex-direction: column;
   justify-content: center;
+  align-items: center;
   padding: 2rem;
-  max-width: 40rem;
-  margin: 0 auto;
   text-align: center;
   pointer-events: none;
+  z-index: 1;
+  opacity: 0;
 }
 
-/* A pure-CSS entrance, not a JS-driven one: it has to start the instant the
-   page paints, with no dependency on a script finishing (or even running) —
-   the headline is the first thing a reader sees, so it can't be left
-   invisible for however long anything on the main thread takes. `to` is left
-   implicit: it resolves to each element's own opacity (h1: 1, .tagline:
-   0.85) rather than duplicating it here. */
-@keyframes surface-in {
-  from {
-    opacity: 0;
-    transform: scale(0.15);
-  }
+.hero-inner {
+  max-width: 40rem;
 }
 
 h1 {
@@ -84,15 +84,12 @@ h1 {
   font-weight: 500;
   letter-spacing: 0.04em;
   margin: 0 0 1rem;
-  animation: surface-in 1.4s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
 }
 
 .tagline {
   font-size: clamp(1rem, 2.5vw, 1.25rem);
-  opacity: 0.85;
   max-width: 32rem;
   margin: 0 auto;
-  animation: surface-in 1.4s cubic-bezier(0.16, 1, 0.3, 1) 0.5s both;
 }
 
 /* #depth's only visible job is to be tall: it's the scroll distance the dive
