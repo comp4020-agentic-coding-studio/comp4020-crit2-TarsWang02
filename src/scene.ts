@@ -3,6 +3,10 @@ import { Text, configureTextBuilder } from "troika-three-text";
 // Bundled by Vite, so the URL is base-path-aware and survives the deploy to a
 // Pages subpath — a literal "/fonts/…" would 404 there while working locally.
 import fontURL from "@fontsource/source-serif-4/files/source-serif-4-latin-400-normal.woff?url";
+// DeepSeek's own mark, pulled from the paths their own homepage ships inline
+// (view-source on deepseek.com, the <g clip-path="url(#clip0_logo)"> group) —
+// not a hand-drawn stand-in. See PROCESS.md for how it was extracted.
+import logoURL from "./assets/deepseek-mark.svg?url";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { curl3D } from "./noise";
@@ -172,17 +176,27 @@ const USE_DEFOCUS_OUTLINE = true;
 // A floor under the negative-space read.
 //
 // The absence (text genuinely bending around a volume it never enters) is
-// still there and untouched, but three rounds of relying on it alone did not
-// produce something reliably visible — it depends on the field being dense
-// enough, at the right depth, for a hole to have a legible edge, which is
-// hard to guarantee. So the whale is now also drawn directly: see
-// makeWhaleTexture above, which rasterises the exact same SDF the text
-// repulsion reads, in DeepSeek's actual brand blue. It is positioned from the
-// same cone projection the repulsion uses (see the tick loop), so the drawn
-// shape and the hole it sits over can never disagree about where the whale
-// is.
-const GLOW_OPACITY_SURFACE = 0.4;
-const GLOW_OPACITY_EYE = 0.85;
+// still there and untouched — the exclusion cone below still reads `sdf`, the
+// same hand-authored silhouette it always has. What sits *visibly* in that
+// cone is two layers of DeepSeek's own mark (see loadLogoTextures), not the
+// silhouette itself: an ambient, undefined glow present through most of the
+// dive, and the actual logo resolving out of it only near the eye. A shape
+// legible from the very first frame gave nothing away to arrive at — the
+// concept is a thing inferred, then finally seen, not a sticker.
+const GLOW_OPACITY_SURFACE = 0.4; // the soft layer's floor — present, not yet a shape
+const GLOW_OPACITY_EYE = 0.85; // the soft layer's ceiling, reached as the logo resolves
+// #eye's own trigger (see eye.ts) starts closing once #depth's 400vh has
+// scrolled past — around p ≈ 0.645 of this dive, given #depth and #eye's
+// relative heights — and the iris is fully opaque (clip-path circle at its
+// own 100% progress) about 0.84 of dive progress: it does not track a fixed
+// dive-progress value, so this is calibrated against the current #depth/#eye
+// height ratio, not exact. The window below is deliberately entirely BEFORE
+// that: resolving the mark any later would finish sharpening behind a
+// screen the iris has already turned solid black, which defeats "align the
+// eye with the mask" — the reveal has to still be visible when it lands.
+const LOGO_RESOLVE_START = 0.5;
+const LOGO_RESOLVE_END = 0.64; // fully resolved just before #eye starts closing over it
+const LOGO_SHARP_MAX_OPACITY = 1;
 
 const NOISE_FREQ = 0.16;
 const FLOW_SPEED = 0.75;
@@ -254,26 +268,97 @@ function smoothstep(x: number): number {
   return x * x * (3 - 2 * x);
 }
 
-const HERO_FADE_IN = 0.05; // fraction of the dive spent arriving
-const HERO_FADE_OUT = 0.15; // fraction spent leaving, ending exactly at the eye
-const HERO_BREATHE_CYCLES = 6; // gentle oscillations across the dive — "keeps refreshing"
+const HERO_BREATHE_CYCLES = 3; // gentle oscillations across one line's own plateau
 const HERO_BREATHE_DEPTH = 0.15; // how far the breathing dips below full opacity
+const HERO_MAX_BLUR_PX = 14; // CSS blur at full defocus, both ends of a line's arc
+
+// One statement at a time, fixed on screen, cycling as the dive proceeds —
+// not one static tagline sitting alone. Every `heading`/`body` pair below is
+// DeepSeek's own wording, pulled verbatim from deepseek.com (view-source, not
+// paraphrased) — see PROCESS.md for the source of each. `startP`/`arcSpan`
+// give each line its own non-overlapping window of dive progress, the same
+// scheduling idea `scheduleFor` uses for strands: nothing shows before its
+// window, and the gaps between windows are deliberate — stretches of just
+// water and the floating research, so a line reads as an event rather than
+// permanent chrome.
+//
+// All four windows end by p = 0.63, comfortably before #eye's own clip-path
+// trigger starts closing over the canvas at p ≈ 0.645 (exactly 400/620 —
+// #depth is 400vh, #eye is 220vh, and both scale with viewport height the
+// same way, so that ratio holds regardless of viewport size). Text scheduled
+// any later would fade out, or simply sit, behind an iris the reader can no
+// longer see through — the approach to the eye past that point is left
+// wordless on purpose, for the mark itself (see LOGO_RESOLVE_START/END) to
+// have the close alone.
+interface NarrationLine {
+  heading: string;
+  body: string;
+  startP: number;
+  arcSpan: number;
+}
+const NARRATION_LINES: NarrationLine[] = [
+  {
+    heading: "探索未至之境",
+    body: "Into the unknown — DeepSeek's own line. The current below is real: DeepSeek's own published research, in motion, bending around a shape it never shows you.",
+    startP: 0,
+    arcSpan: 0.12,
+  },
+  {
+    heading: "深度求索",
+    body: "DeepSeek's own Chinese name, literally — to seek by going deep. It is the closest thing this site has to a thesis statement, and it already existed.",
+    startP: 0.17,
+    arcSpan: 0.12,
+  },
+  {
+    heading: "我们投身于探索 AGI 的本质",
+    body: "From DeepSeek's own careers page: “devoted to exploring the essence of AGI.” Not written for this redesign — theirs.",
+    startP: 0.34,
+    arcSpan: 0.12,
+  },
+  {
+    heading: "共赴星辰大海",
+    body: "DeepSeek's own recruiting line — onward, to the stars and the sea. The dive ends here; so does their own metaphor, right as the mark itself finally resolves.",
+    startP: 0.51,
+    arcSpan: 0.12,
+  },
+];
+
+// Shared by every narration line: arrive small, blurred and faint; hold a
+// readable plateau; leave larger, blurred and faint again — the same
+// birth-peak-retirement shape `strandArc` gives every strand, reused rather
+// than reinvented, so the main statement gets the identical "grow, go
+// transparent, go soft" exit the concept asks for everywhere else.
+const NARRATION_ARC: ArcTiming = {
+  birthPhase: 0.22,
+  retirePhase: 0.32,
+  birthScale: 0.82, // arrives slightly small
+  retireScale: 1.6, // leaves noticeably larger — passing close, like a strand
+};
+
+export interface NarrationState {
+  activeIndex: number; // -1 when no line is in its window
+  opacity: number;
+  scale: number;
+  blurPx: number;
+}
 
 /**
- * The hero statement's own opacity as a pure function of dive progress `p`.
- *
- * It is not static content: 0 before the reader scrolls at all (the surface
- * is just water), fading in quickly once they do, then breathing gently
- * through the reading section — a slow, continuous oscillation rather than a
- * single fade, so it reads as alive and present rather than a one-off
- * entrance — before fading out over the approach to the eye, so the
- * transition there isn't competing with it.
+ * Which narration line (if any) owns dive progress `p`, and its own
+ * opacity/scale/blur — reusing `strandArc` so the hero text gets the exact
+ * defocus behaviour a strand gets, not a separate opacity-only fade.
  */
-export function heroPulseOpacity(p: number): number {
-  const fadeIn = smoothstep(Math.min(Math.max(p / HERO_FADE_IN, 0), 1));
-  const fadeOut = smoothstep(Math.min(Math.max((1 - p) / HERO_FADE_OUT, 0), 1));
-  const breathe = 1 - HERO_BREATHE_DEPTH * (0.5 - 0.5 * Math.cos(p * Math.PI * 2 * HERO_BREATHE_CYCLES));
-  return fadeIn * fadeOut * breathe;
+export function narrationStateAt(p: number): NarrationState {
+  const activeIndex = NARRATION_LINES.findIndex(
+    (line) => p >= line.startP && p <= line.startP + line.arcSpan,
+  );
+  if (activeIndex === -1) {
+    return { activeIndex: -1, opacity: 0, scale: 1, blurPx: 0 };
+  }
+  const line = NARRATION_LINES[activeIndex]!;
+  const lifeT = (p - line.startP) / line.arcSpan;
+  const { focus, scale } = strandArc(lifeT, NARRATION_ARC);
+  const breathe = 1 - HERO_BREATHE_DEPTH * (0.5 - 0.5 * Math.cos(lifeT * Math.PI * 2 * HERO_BREATHE_CYCLES));
+  return { activeIndex, opacity: focus * breathe, scale, blurPx: HERO_MAX_BLUR_PX * (1 - focus) };
 }
 
 export interface StrandArc {
@@ -324,19 +409,13 @@ export function strandArc(lifeT: number, timing: ArcTiming): StrandArc {
 }
 
 /**
- * The whale, actually drawn — not just its exclusion field.
- *
- * Two rounds of relying on absence alone (the text-flow bending around an
- * unrendered volume) did not produce something reliably visible: it depends
- * on the field being dense enough, at the right depth, for a hole to have a
- * legible edge, and that legibility is hard to guarantee across viewports and
- * scroll speeds. This renders the same silhouette directly instead — built
- * straight from `sdf`'s own distance grid, so it is pixel-for-pixel the exact
- * shape the text already bends around, not a second hand-kept copy that could
- * drift out of sync with it. Deep inside the silhouette (very negative
- * distance) is fully opaque; the boundary softens over `EDGE_SOFTNESS` grid
- * cells so the edge glows rather than cutting hard, in keeping with "seen
- * through a current" rather than a stencil.
+ * Fallback only, if `loadLogoTextures` below ever fails to load the real
+ * asset — an invisible whale is a worse failure than a hand-authored
+ * stand-in. Built straight from `sdf`'s own distance grid, so at least it is
+ * pixel-for-pixel the exact shape the text repulsion bends around. Deep
+ * inside the silhouette (very negative distance) is fully opaque; the
+ * boundary softens over `EDGE_SOFTNESS` grid cells so the edge glows rather
+ * than cutting hard.
  */
 const EDGE_SOFTNESS = 5; // grid cells of soft falloff at the silhouette's edge
 function makeWhaleTexture(sdf: SDFField): THREE.DataTexture {
@@ -355,6 +434,68 @@ function makeWhaleTexture(sdf: SDFField): THREE.DataTexture {
   const texture = new THREE.DataTexture(rgba, width, height, THREE.RGBAFormat);
   texture.needsUpdate = true;
   return texture;
+}
+
+// DeepSeek's own mark, in its native coordinate space (the viewBox
+// src/assets/deepseek-mark.svg was cropped to, taken straight from
+// deepseek.com's own inline SVG). LOGO_EYE_U/V are the small eye loop's own
+// centre within that box — read directly off the path's control points, not
+// eyeballed from a render — so the mark can be drawn with its actual eye at
+// the texture's centre, which is where .iris (see eye.ts) always opens from.
+const LOGO_VIEWBOX = { x: 0.163086, y: 1.75, width: 26.634, height: 19.6 };
+const LOGO_EYE_U = (14.4659 - LOGO_VIEWBOX.x) / LOGO_VIEWBOX.width;
+const LOGO_EYE_V = (11.2489 - LOGO_VIEWBOX.y) / LOGO_VIEWBOX.height;
+
+const LOGO_CANVAS_SIZE = 1024;
+const LOGO_DRAW_SCALE = 0.62; // fraction of the canvas the mark's own width fills
+const LOGO_SOFT_BLUR_PX = 46; // canvas-filter blur for the "undefined light" layer
+
+/**
+ * Two renders of the same mark, both with its eye at the canvas centre so
+ * both line up with the plane they'll be mapped onto and with `.iris` behind
+ * it: a sharp one (the mark as DeepSeek draws it) and a heavily blurred one
+ * (a formless cluster of light — what the dive shows before the mark has any
+ * business being recognisable). The tick loop cross-fades between them by
+ * dive progress, rather than showing the sharp mark from frame one.
+ */
+function loadLogoTextures(): Promise<{ sharp: THREE.CanvasTexture; soft: THREE.CanvasTexture }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const iconAspect = LOGO_VIEWBOX.width / LOGO_VIEWBOX.height;
+      const drawWidth = LOGO_CANVAS_SIZE * LOGO_DRAW_SCALE;
+      const drawHeight = drawWidth / iconAspect;
+      const drawX = LOGO_CANVAS_SIZE / 2 - LOGO_EYE_U * drawWidth;
+      const drawY = LOGO_CANVAS_SIZE / 2 - LOGO_EYE_V * drawHeight;
+
+      const sharpCanvas = document.createElement("canvas");
+      sharpCanvas.width = LOGO_CANVAS_SIZE;
+      sharpCanvas.height = LOGO_CANVAS_SIZE;
+      sharpCanvas.getContext("2d")!.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+
+      const softCanvas = document.createElement("canvas");
+      softCanvas.width = LOGO_CANVAS_SIZE;
+      softCanvas.height = LOGO_CANVAS_SIZE;
+      const softCtx = softCanvas.getContext("2d")!;
+      softCtx.filter = `blur(${LOGO_SOFT_BLUR_PX}px)`;
+      softCtx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+
+      resolve({ sharp: new THREE.CanvasTexture(sharpCanvas), soft: new THREE.CanvasTexture(softCanvas) });
+    };
+    img.onerror = () => reject(new Error("Failed to load DeepSeek mark SVG"));
+    img.src = logoURL;
+  });
+}
+
+/** How resolved the sharp mark is at dive progress `p` — 0 for most of the
+ * dive (just the soft, undefined layer shows), ramping up only in the
+ * approach to the eye. Exported and pure for the same reason `strandArc` is:
+ * a "when does it become recognisable" regression belongs in an assertion,
+ * not a screenshot. */
+export function logoResolveAmount(p: number): number {
+  return smoothstep(
+    THREE.MathUtils.clamp((p - LOGO_RESOLVE_START) / (LOGO_RESOLVE_END - LOGO_RESOLVE_START), 0, 1),
+  );
 }
 
 /**
@@ -425,30 +566,60 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   // world units below; because it sits at exactly `whaleDistance` from the
   // camera — the depth where whale space and world space coincide (see
   // whale-field.ts) — the SDF grid's own world footprint (WORLD_HALF_WIDTH ×
-  // WORLD_HALF_HEIGHT) is already the plane's correct world size there, with
-  // no extra spread factor needed: the texture itself already carries the
-  // silhouette's soft edge (see makeWhaleTexture/EDGE_SOFTNESS), so scaling
-  // the plane up would just add empty margin, not more glow.
+  // WORLD_HALF_HEIGHT) is the same footprint the exclusion cone occupies, so
+  // the visible glow and the invisible hole cover the same region even though
+  // they no longer come from the same texture.
   // Holds the whale's apparent size steady across aspect ratios — without it
   // a portrait phone gets a whale wider than its own viewport (see
   // whaleDistanceScaleFor). Read once here and reused for both the repulsion
-  // cone and this plane, so the two cannot disagree.
+  // cone and both glow planes, so none of the three can disagree.
   const whaleDistanceScale = whaleDistanceScaleFor(canvas.clientWidth / canvas.clientHeight);
 
-  const glowMaterial = new THREE.MeshBasicMaterial({
-    map: makeWhaleTexture(sdf),
-    color: CURRENT_BLUE,
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    fog: false,
-  });
-  const glow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), glowMaterial);
-  // Drawn before the text so strands read as suspended in the light, not
-  // washed over by it.
-  glow.renderOrder = -1;
-  glow.scale.set(WORLD_HALF_WIDTH * 2, WORLD_HALF_HEIGHT * 2, 1);
-  scene.add(glow);
+  // Two planes, same position and size every frame, cross-faded by
+  // logoResolveAmount: `glowSoft` is the undefined cluster of light the dive
+  // shows for most of its length; `glowSharp` is DeepSeek's actual mark,
+  // fading in only in the approach to the eye. Both start fully transparent
+  // — `logosReady` below holds them there until loadLogoTextures resolves, so
+  // there's no frame of a flat white quad while the async load is in flight.
+  function makeGlowMesh(): THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> {
+    const material = new THREE.MeshBasicMaterial({
+      color: CURRENT_BLUE,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      fog: false,
+      opacity: 0,
+    });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
+    // Drawn before the text so strands read as suspended in the light, not
+    // washed over by it.
+    mesh.renderOrder = -1;
+    mesh.scale.set(WORLD_HALF_WIDTH * 2, WORLD_HALF_HEIGHT * 2, 1);
+    scene.add(mesh);
+    return mesh;
+  }
+  const glowSoft = makeGlowMesh();
+  const glowSharp = makeGlowMesh();
+
+  let logosReady = false;
+  loadLogoTextures()
+    .then(({ sharp, soft }) => {
+      glowSharp.material.map = sharp;
+      glowSoft.material.map = soft;
+      glowSharp.material.needsUpdate = true;
+      glowSoft.material.needsUpdate = true;
+      logosReady = true;
+    })
+    .catch(() => {
+      // The hand-authored silhouette, so the whale is merely inferred rather
+      // than genuinely absent if the real asset can't be fetched.
+      const fallback = makeWhaleTexture(sdf);
+      glowSharp.material.map = fallback;
+      glowSoft.material.map = fallback;
+      glowSharp.material.needsUpdate = true;
+      glowSoft.material.needsUpdate = true;
+      logosReady = true;
+    });
 
   function makeStrand(isReader: boolean): Strand {
     const mesh = new Text();
@@ -520,12 +691,17 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   resize();
   window.addEventListener("resize", resize);
 
-  // Owned here rather than by its old CSS @keyframes entrance: the hero
-  // statement is no longer static content shown once at load, it recurs
-  // through the dive (see heroPulseOpacity), and `.hero` is now `position:
-  // fixed` (see styles.css) so it stays in view to recur in, rather than
-  // scrolling away with the page.
+  // Owned here rather than by its old CSS @keyframes entrance: the hero slot
+  // is no longer one static statement shown once at load, it cycles through
+  // several of DeepSeek's own lines across the dive (see narrationStateAt),
+  // and `.hero` is now `position: fixed` (see styles.css) so it stays in view
+  // to recur in, rather than scrolling away with the page. heading/tagline
+  // are looked up once and their text swapped in the tick loop, rather than
+  // re-querying the DOM every frame.
   const heroEl = document.querySelector<HTMLElement>(".hero");
+  const heroHeadingEl = heroEl?.querySelector<HTMLElement>("h1") ?? null;
+  const heroTaglineEl = heroEl?.querySelector<HTMLElement>(".tagline") ?? null;
+  let activeNarrationIndex = -1;
 
   // One continuous dive spanning the whole research read plus the eye, so the
   // descent plays out across the entire scroll rather than as a burst in the
@@ -564,7 +740,20 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     t += dt;
     const p = diveProgress;
 
-    if (heroEl) heroEl.style.opacity = String(heroPulseOpacity(p));
+    if (heroEl) {
+      const narration = narrationStateAt(p);
+      if (narration.activeIndex !== activeNarrationIndex) {
+        activeNarrationIndex = narration.activeIndex;
+        if (activeNarrationIndex !== -1) {
+          const line = NARRATION_LINES[activeNarrationIndex]!;
+          if (heroHeadingEl) heroHeadingEl.textContent = line.heading;
+          if (heroTaglineEl) heroTaglineEl.textContent = line.body;
+        }
+      }
+      heroEl.style.opacity = String(narration.opacity);
+      heroEl.style.transform = `scale(${narration.scale})`;
+      heroEl.style.filter = narration.blurPx > 0.05 ? `blur(${narration.blurPx}px)` : "none";
+    }
 
     const [jx, jy] = curl3D(t * CAMERA_JITTER_SPEED, 41.3, 87.6);
     camera.position.set(
@@ -587,8 +776,16 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     // same anchor the repulsion cone is built from, so the glow and the hole
     // can never disagree about where the whale is. It grows on screen as the
     // dive closes because the distance shrinks, not because it is scaled up.
-    glow.position.set(0, 0, camera.position.z - whaleDistance);
-    glowMaterial.opacity = THREE.MathUtils.lerp(GLOW_OPACITY_SURFACE, GLOW_OPACITY_EYE, p);
+    glowSoft.position.set(0, 0, camera.position.z - whaleDistance);
+    glowSharp.position.copy(glowSoft.position);
+    if (logosReady) {
+      const resolve = logoResolveAmount(p);
+      // The soft layer eases back as the sharp mark takes over, rather than
+      // both sitting at full additive strength together and blowing out —
+      // the mark should emerge from the light, not just sit on top of it.
+      glowSoft.material.opacity = THREE.MathUtils.lerp(GLOW_OPACITY_SURFACE, GLOW_OPACITY_EYE, p) * (1 - 0.3 * resolve);
+      glowSharp.material.opacity = resolve * LOGO_SHARP_MAX_OPACITY;
+    }
 
     for (const strand of strands) {
       // Outside its own [startP, startP + arcSpan] window a strand doesn't

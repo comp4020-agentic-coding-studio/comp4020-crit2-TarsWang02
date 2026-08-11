@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { strandArc, type ArcTiming } from "../src/scene";
+import { strandArc, narrationStateAt, logoResolveAmount, type ArcTiming } from "../src/scene";
 
 // Every strand is meant to live one arc: arrive small, faint and soft; hold a
 // readable window at full size and full sharpness; then swell past peak and
@@ -105,5 +105,84 @@ describe("readers vs motes", () => {
     // The main content should never be traversed faster than the texture
     // around it — readers are meant to be the slower, deliberate event.
     expect(READER_ARC_SPAN_MIN).toBeGreaterThan(MOTE_ARC_SPAN_MAX);
+  });
+});
+
+// The hero slot cycles through several of DeepSeek's own lines rather than
+// showing one tagline for the whole dive — narrationStateAt is what decides
+// which line (if any) owns a given point in the dive, and reuses strandArc
+// for its opacity/scale rather than a separate opacity-only fade.
+describe("narrationStateAt", () => {
+  it("shows nothing before the first line's window opens", () => {
+    // No line's own window starts before the surface, but the gap check
+    // itself is the point: strandArc's boundary maths (focus=0 but
+    // defocus=1) must not leak a ghost line into view the way an ungated
+    // strand once did (see the tick loop's own comment on that failure).
+    expect(narrationStateAt(-0.01).activeIndex).toBe(-1);
+  });
+
+  it("leaves gaps of no active line between statements", () => {
+    // The brief asked for lines to read as distinct events through the dive,
+    // not one continuous statement — so somewhere between the first line's
+    // window and the second, dive progress must pass through a stretch with
+    // no active line at all.
+    let sawGap = false;
+    for (let p = 0.12; p <= 0.17; p += 0.01) {
+      if (narrationStateAt(p).activeIndex === -1) sawGap = true;
+    }
+    expect(sawGap).toBe(true);
+  });
+
+  it("arrives small and blurred, peaks sharp, leaves larger and blurred again", () => {
+    const early = narrationStateAt(0.001); // just inside the first line's window
+    const mid = narrationStateAt(0.06); // its window's own midpoint
+    expect(early.scale).toBeLessThan(1);
+    expect(early.blurPx).toBeGreaterThan(0);
+    expect(mid.scale).toBeCloseTo(1, 1);
+    expect(mid.blurPx).toBeLessThan(1);
+  });
+
+  it("grows larger, not smaller, as a line leaves — the same 'closing in' read a strand gets", () => {
+    const retiring = narrationStateAt(0.117); // just before the first window closes
+    expect(retiring.scale).toBeGreaterThan(1);
+  });
+
+  it("finishes every line before #eye starts closing over the canvas", () => {
+    // #depth is 400vh and #eye is 220vh, both scaling with viewport height
+    // the same way, so #eye's clip-path trigger always starts at dive
+    // progress 400/620 regardless of viewport size — text scheduled past
+    // that point would fade out (or simply sit) behind an iris the reader
+    // can no longer see through. This is exactly the bug the first version
+    // of this schedule had: two lines ran past that boundary unnoticed
+    // because nothing asserted it.
+    const eyeCloseStart = 400 / 620;
+    for (let p = eyeCloseStart - 0.015; p < eyeCloseStart; p += 0.005) {
+      expect(narrationStateAt(p).activeIndex, `line still active at p=${p}`).toBe(-1);
+    }
+  });
+});
+
+// The mark stays an undefined cluster of light for most of the dive and only
+// resolves into DeepSeek's actual logo in the approach to the eye — the
+// opposite of rendering it fully legible from frame one.
+describe("logoResolveAmount", () => {
+  it("is fully unresolved through most of the reading section", () => {
+    expect(logoResolveAmount(0)).toBe(0);
+    expect(logoResolveAmount(0.3)).toBe(0);
+  });
+
+  it("resolves fully before #eye starts closing over it", () => {
+    // #eye's own clip-path trigger begins around p ≈ 0.645 given the current
+    // #depth/#eye height ratio (see the constant's own comment) — resolution
+    // must finish before that, or the reveal happens behind an already-black
+    // screen. 0.64 is deliberately not later than that.
+    expect(logoResolveAmount(0.64)).toBe(1);
+    expect(logoResolveAmount(1)).toBe(1);
+  });
+
+  it("only sharpens in its own late window, not gradually across the whole dive", () => {
+    expect(logoResolveAmount(0.45)).toBe(0);
+    expect(logoResolveAmount(0.57)).toBeGreaterThan(0);
+    expect(logoResolveAmount(0.57)).toBeLessThan(1);
   });
 });

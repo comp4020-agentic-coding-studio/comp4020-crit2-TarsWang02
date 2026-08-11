@@ -54,13 +54,16 @@ nav[aria-label="Primary"] {
   letter-spacing: 0.02em;
 }
 
-/* Fixed, not in document flow: this is the thesis statement, meant to recur
-   through the dive rather than sit once at the top of the page and scroll
-   away. Its opacity is owned entirely by scene.ts's tick loop (see
-   heroPulseOpacity there) — 0 at dive progress 0 (nothing shows before the
-   reader scrolls), fading in, breathing gently through the reading section,
-   and fading out approaching the eye. The inline `opacity: 0` here is the
-   fail-safe default before the scene's first frame runs, not an animation. */
+/* Fixed, not in document flow: a slot that cycles through several of
+   DeepSeek's own lines across the dive, rather than one thesis statement
+   sitting once at the top of the page and scrolling away. Its opacity,
+   transform and filter are owned entirely by scene.ts's tick loop (see
+   narrationStateAt there) — nothing shows before the reader scrolls, each
+   line arrives slightly small and blurred, holds a sharp readable plateau,
+   then leaves larger, more transparent and blurred again, the same
+   birth-peak-retirement shape a strand gets. The inline `opacity: 0` here is
+   the fail-safe default before the scene's first frame runs, not an
+   animation; transform/filter default to none for the same reason. */
 .hero {
   position: fixed;
   inset: 0;
