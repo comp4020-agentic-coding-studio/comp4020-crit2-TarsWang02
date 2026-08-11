@@ -141,8 +141,15 @@ const USE_DEFOCUS_OUTLINE = true;
 // the same cone projection the text repulsion uses, so if the geometry is ever
 // wrong the glow is wrong in exactly the same way and the disagreement between
 // hole and glow is itself diagnostic.
-const GLOW_OPACITY_SURFACE = 0.06;
-const GLOW_OPACITY_EYE = 0.36;
+// 0.06 was too close to zero to register as "something is there" rather than
+// "nothing is there" through the whole reading section — exactly where the
+// reader is actually looking — only becoming clearly visible in the last
+// stretch before the eye. Raised so a soft blue presence is perceptible from
+// early on; GLOW_OPACITY_EYE re-derived to keep a comparable growth ratio
+// (was 6x the floor, now ~2.8x) so it still reads as closing in, not as
+// switching on.
+const GLOW_OPACITY_SURFACE = 0.22;
+const GLOW_OPACITY_EYE = 0.62;
 const GLOW_SPREAD = 1.6; // how far the falloff reaches past the silhouette
 
 const NOISE_FREQ = 0.16;
