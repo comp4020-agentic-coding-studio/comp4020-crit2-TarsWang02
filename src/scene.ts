@@ -122,6 +122,7 @@ const MOTES_COMPACT = 190;
 
 const DEEP_NAVY = 0x040814;
 const CURRENT_BLUE = 0x4d6bfe;
+const RIM_BLUE = 0x9fc4ff; // a cooler, lighter blue for the mark's halo layer — depth, not a flat single tone
 
 // A strand's whole life is one arc, driven off its own normalised lifeT so
 // the three phases are guaranteed to meet: arriving (small, faint, soft) →
@@ -200,6 +201,9 @@ const GLOW_AWAKEN_P = 0.5; // dive progress where the glow starts brightening at
 const LOGO_RESOLVE_START = 0.5;
 const LOGO_RESOLVE_END = 0.64; // fully resolved just before #eye starts closing over it
 const LOGO_SHARP_MAX_OPACITY = 1;
+const LOGO_RIM_MAX_OPACITY = 0.55;
+const LOGO_PULSE_SPEED = 0.9; // radians/sec — a slow, held shimmer, not a blink
+const LOGO_PULSE_DEPTH = 0.12; // how far the shimmer dips below full strength
 
 const NOISE_FREQ = 0.16;
 const FLOW_SPEED = 0.75;
@@ -457,40 +461,75 @@ const LOGO_EYE_V = (11.2489 - LOGO_VIEWBOX.y) / LOGO_VIEWBOX.height;
 // some rounder number.
 const LOGO_CANVAS_WIDTH = 1024;
 const LOGO_CANVAS_HEIGHT = 512;
-const LOGO_DRAW_SCALE = 0.62; // fraction of the canvas WIDTH the mark's own width fills
+const LOGO_DRAW_SCALE = 0.4; // fraction of the canvas WIDTH the mark's own width fills — smaller reads as a
+// presence glimpsed at a distance, not a logo pasted across the screen.
 const LOGO_SOFT_BLUR_PX = 46; // canvas-filter blur for the "undefined light" layer
+const LOGO_RIM_SCALE = 1.14; // the rim layer is the mark drawn slightly oversized behind the sharp one
+const LOGO_RIM_BLUR_PX = 10; // soft enough to read as a halo, not a second copy of the mark
+const SCANLINE_SPACING_PX = 5; // holographic-readout texture baked into the sharp layer only
+const SCANLINE_DARKEN = 0.4; // how much each line cuts into the mark's own alpha
+
+/** Cuts faint, regularly-spaced horizontal gaps into whatever's already
+ * drawn on `ctx` — a scanned/projected readout texture rather than a flat
+ * silhouette, baked once into the canvas rather than done as a live shader. */
+function applyScanlines(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.fillStyle = `rgba(0, 0, 0, ${SCANLINE_DARKEN})`;
+  for (let y = 0; y < height; y += SCANLINE_SPACING_PX * 2) {
+    ctx.fillRect(0, y, width, SCANLINE_SPACING_PX);
+  }
+  ctx.globalCompositeOperation = "source-over";
+}
 
 /**
- * Two renders of the same mark, both with its eye at the canvas centre so
- * both line up with the plane they'll be mapped onto and with `.iris` behind
- * it: a sharp one (the mark as DeepSeek draws it) and a heavily blurred one
- * (a formless cluster of light — what the dive shows before the mark has any
- * business being recognisable). The tick loop cross-fades between them by
- * dive progress, rather than showing the sharp mark from frame one.
+ * Three renders of the same mark, all with its eye at the canvas centre so
+ * they line up with the plane they'll be mapped onto and with `.iris` behind
+ * it:
+ *  - `soft` — heavily blurred, a formless cluster of light (what the dive
+ *    shows before the mark has any business being recognisable);
+ *  - `rim` — drawn oversized and lightly blurred, a halo sitting behind the
+ *    sharp mark rather than a second copy of it, tinted a lighter, cooler
+ *    blue than the core (see the rim mesh's own material.color) for the
+ *    layered, projected-light read a single flat silhouette didn't have;
+ *  - `sharp` — the mark as DeepSeek draws it, with faint scanlines cut into
+ *    its own alpha (applyScanlines) so even fully resolved it reads as a
+ *    projection rather than a sticker.
+ * The tick loop cross-fades all three by dive progress.
  */
-function loadLogoTextures(): Promise<{ sharp: THREE.CanvasTexture; soft: THREE.CanvasTexture }> {
+function loadLogoTextures(): Promise<{ sharp: THREE.CanvasTexture; soft: THREE.CanvasTexture; rim: THREE.CanvasTexture }> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
       const iconAspect = LOGO_VIEWBOX.width / LOGO_VIEWBOX.height;
-      const drawWidth = LOGO_CANVAS_WIDTH * LOGO_DRAW_SCALE;
-      const drawHeight = drawWidth / iconAspect;
-      const drawX = LOGO_CANVAS_WIDTH / 2 - LOGO_EYE_U * drawWidth;
-      const drawY = LOGO_CANVAS_HEIGHT / 2 - LOGO_EYE_V * drawHeight;
 
-      const sharpCanvas = document.createElement("canvas");
-      sharpCanvas.width = LOGO_CANVAS_WIDTH;
-      sharpCanvas.height = LOGO_CANVAS_HEIGHT;
-      sharpCanvas.getContext("2d")!.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+      const makeCanvas = (scale: number, blurPx: number, scanlines: boolean): HTMLCanvasElement => {
+        const drawWidth = LOGO_CANVAS_WIDTH * LOGO_DRAW_SCALE * scale;
+        const drawHeight = drawWidth / iconAspect;
+        const drawX = LOGO_CANVAS_WIDTH / 2 - LOGO_EYE_U * drawWidth;
+        const drawY = LOGO_CANVAS_HEIGHT / 2 - LOGO_EYE_V * drawHeight;
 
-      const softCanvas = document.createElement("canvas");
-      softCanvas.width = LOGO_CANVAS_WIDTH;
-      softCanvas.height = LOGO_CANVAS_HEIGHT;
-      const softCtx = softCanvas.getContext("2d")!;
-      softCtx.filter = `blur(${LOGO_SOFT_BLUR_PX}px)`;
-      softCtx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+        const canvas = document.createElement("canvas");
+        canvas.width = LOGO_CANVAS_WIDTH;
+        canvas.height = LOGO_CANVAS_HEIGHT;
+        const ctx = canvas.getContext("2d")!;
+        if (blurPx > 0) ctx.filter = `blur(${blurPx}px)`;
+        ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+        if (scanlines) {
+          ctx.filter = "none";
+          applyScanlines(ctx, LOGO_CANVAS_WIDTH, LOGO_CANVAS_HEIGHT);
+        }
+        return canvas;
+      };
 
-      resolve({ sharp: new THREE.CanvasTexture(sharpCanvas), soft: new THREE.CanvasTexture(softCanvas) });
+      const sharpCanvas = makeCanvas(1, 0, true);
+      const softCanvas = makeCanvas(1, LOGO_SOFT_BLUR_PX, false);
+      const rimCanvas = makeCanvas(LOGO_RIM_SCALE, LOGO_RIM_BLUR_PX, false);
+
+      resolve({
+        sharp: new THREE.CanvasTexture(sharpCanvas),
+        soft: new THREE.CanvasTexture(softCanvas),
+        rim: new THREE.CanvasTexture(rimCanvas),
+      });
     };
     img.onerror = () => reject(new Error("Failed to load DeepSeek mark SVG"));
     img.src = logoURL;
@@ -595,15 +634,17 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   // cone and both glow planes, so none of the three can disagree.
   const whaleDistanceScale = whaleDistanceScaleFor(canvas.clientWidth / canvas.clientHeight);
 
-  // Two planes, same position and size every frame, cross-faded by
+  // Three planes, same position and size every frame, cross-faded by
   // logoResolveAmount: `glowSoft` is the undefined cluster of light the dive
-  // shows for most of its length; `glowSharp` is DeepSeek's actual mark,
-  // fading in only in the approach to the eye. Both start fully transparent
-  // — `logosReady` below holds them there until loadLogoTextures resolves, so
-  // there's no frame of a flat white quad while the async load is in flight.
-  function makeGlowMesh(): THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> {
+  // shows for most of its length; `glowRim` and `glowSharp` are DeepSeek's
+  // actual mark — a cooler, wider halo behind a sharper core — fading in
+  // together only in the approach to the eye. All three start fully
+  // transparent — `logosReady` below holds them there until
+  // loadLogoTextures resolves, so there's no frame of a flat white quad
+  // while the async load is in flight.
+  function makeGlowMesh(color: number): THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> {
     const material = new THREE.MeshBasicMaterial({
-      color: CURRENT_BLUE,
+      color,
       transparent: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
@@ -618,16 +659,19 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     scene.add(mesh);
     return mesh;
   }
-  const glowSoft = makeGlowMesh();
-  const glowSharp = makeGlowMesh();
+  const glowSoft = makeGlowMesh(CURRENT_BLUE);
+  const glowRim = makeGlowMesh(RIM_BLUE);
+  const glowSharp = makeGlowMesh(CURRENT_BLUE);
 
   let logosReady = false;
   loadLogoTextures()
-    .then(({ sharp, soft }) => {
+    .then(({ sharp, soft, rim }) => {
       glowSharp.material.map = sharp;
       glowSoft.material.map = soft;
+      glowRim.material.map = rim;
       glowSharp.material.needsUpdate = true;
       glowSoft.material.needsUpdate = true;
+      glowRim.material.needsUpdate = true;
       logosReady = true;
     })
     .catch(() => {
@@ -636,8 +680,10 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       const fallback = makeWhaleTexture(sdf);
       glowSharp.material.map = fallback;
       glowSoft.material.map = fallback;
+      glowRim.material.map = fallback;
       glowSharp.material.needsUpdate = true;
       glowSoft.material.needsUpdate = true;
+      glowRim.material.needsUpdate = true;
       logosReady = true;
     });
 
@@ -797,14 +843,21 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     // can never disagree about where the whale is. It grows on screen as the
     // dive closes because the distance shrinks, not because it is scaled up.
     glowSoft.position.set(0, 0, camera.position.z - whaleDistance);
+    glowRim.position.copy(glowSoft.position);
     glowSharp.position.copy(glowSoft.position);
     if (logosReady) {
       const resolve = logoResolveAmount(p);
+      // A slow shimmer on the resolved mark alone — cosmetic, driven by wall
+      // clock `t` like the camera's own jitter, not by scroll — so a
+      // fully-resolved mark reads as a live projection rather than a static
+      // sticker even while the reader holds still.
+      const shimmer = 1 - LOGO_PULSE_DEPTH * (0.5 - 0.5 * Math.sin(t * LOGO_PULSE_SPEED));
       // The soft layer eases back as the sharp mark takes over, rather than
       // both sitting at full additive strength together and blowing out —
       // the mark should emerge from the light, not just sit on top of it.
       glowSoft.material.opacity = glowBrightness(p) * (1 - 0.3 * resolve);
-      glowSharp.material.opacity = resolve * LOGO_SHARP_MAX_OPACITY;
+      glowRim.material.opacity = resolve * LOGO_RIM_MAX_OPACITY * shimmer;
+      glowSharp.material.opacity = resolve * LOGO_SHARP_MAX_OPACITY * shimmer;
     }
 
     for (const strand of strands) {
