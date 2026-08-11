@@ -466,20 +466,6 @@ const LOGO_DRAW_SCALE = 0.4; // fraction of the canvas WIDTH the mark's own widt
 const LOGO_SOFT_BLUR_PX = 46; // canvas-filter blur for the "undefined light" layer
 const LOGO_RIM_SCALE = 1.14; // the rim layer is the mark drawn slightly oversized behind the sharp one
 const LOGO_RIM_BLUR_PX = 10; // soft enough to read as a halo, not a second copy of the mark
-const SCANLINE_SPACING_PX = 5; // holographic-readout texture baked into the sharp layer only
-const SCANLINE_DARKEN = 0.4; // how much each line cuts into the mark's own alpha
-
-/** Cuts faint, regularly-spaced horizontal gaps into whatever's already
- * drawn on `ctx` — a scanned/projected readout texture rather than a flat
- * silhouette, baked once into the canvas rather than done as a live shader. */
-function applyScanlines(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-  ctx.globalCompositeOperation = "destination-out";
-  ctx.fillStyle = `rgba(0, 0, 0, ${SCANLINE_DARKEN})`;
-  for (let y = 0; y < height; y += SCANLINE_SPACING_PX * 2) {
-    ctx.fillRect(0, y, width, SCANLINE_SPACING_PX);
-  }
-  ctx.globalCompositeOperation = "source-over";
-}
 
 /**
  * Three renders of the same mark, all with its eye at the canvas centre so
@@ -491,9 +477,7 @@ function applyScanlines(ctx: CanvasRenderingContext2D, width: number, height: nu
  *    sharp mark rather than a second copy of it, tinted a lighter, cooler
  *    blue than the core (see the rim mesh's own material.color) for the
  *    layered, projected-light read a single flat silhouette didn't have;
- *  - `sharp` — the mark as DeepSeek draws it, with faint scanlines cut into
- *    its own alpha (applyScanlines) so even fully resolved it reads as a
- *    projection rather than a sticker.
+ *  - `sharp` — the mark as DeepSeek draws it, unmodified.
  * The tick loop cross-fades all three by dive progress.
  */
 function loadLogoTextures(): Promise<{ sharp: THREE.CanvasTexture; soft: THREE.CanvasTexture; rim: THREE.CanvasTexture }> {
@@ -502,7 +486,7 @@ function loadLogoTextures(): Promise<{ sharp: THREE.CanvasTexture; soft: THREE.C
     img.onload = () => {
       const iconAspect = LOGO_VIEWBOX.width / LOGO_VIEWBOX.height;
 
-      const makeCanvas = (scale: number, blurPx: number, scanlines: boolean): HTMLCanvasElement => {
+      const makeCanvas = (scale: number, blurPx: number): HTMLCanvasElement => {
         const drawWidth = LOGO_CANVAS_WIDTH * LOGO_DRAW_SCALE * scale;
         const drawHeight = drawWidth / iconAspect;
         const drawX = LOGO_CANVAS_WIDTH / 2 - LOGO_EYE_U * drawWidth;
@@ -514,16 +498,12 @@ function loadLogoTextures(): Promise<{ sharp: THREE.CanvasTexture; soft: THREE.C
         const ctx = canvas.getContext("2d")!;
         if (blurPx > 0) ctx.filter = `blur(${blurPx}px)`;
         ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
-        if (scanlines) {
-          ctx.filter = "none";
-          applyScanlines(ctx, LOGO_CANVAS_WIDTH, LOGO_CANVAS_HEIGHT);
-        }
         return canvas;
       };
 
-      const sharpCanvas = makeCanvas(1, 0, true);
-      const softCanvas = makeCanvas(1, LOGO_SOFT_BLUR_PX, false);
-      const rimCanvas = makeCanvas(LOGO_RIM_SCALE, LOGO_RIM_BLUR_PX, false);
+      const sharpCanvas = makeCanvas(1, 0);
+      const softCanvas = makeCanvas(1, LOGO_SOFT_BLUR_PX);
+      const rimCanvas = makeCanvas(LOGO_RIM_SCALE, LOGO_RIM_BLUR_PX);
 
       resolve({
         sharp: new THREE.CanvasTexture(sharpCanvas),

@@ -121,20 +121,59 @@ h1 {
   position: relative;
 }
 
+/* The mask itself: a radial gradient rather than a flat fill, so growing its
+   clip-path circle sweeps outward through a bright core toward black instead
+   of wiping one flat colour across the screen — see eye.ts for why it's
+   layered under .iris-glow rather than alone. */
 .iris {
   position: sticky;
   top: 0;
   height: 100vh;
   width: 100%;
-  background: #000103;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgb(159 196 255 / 90%) 0%,
+    rgb(77 107 254 / 55%) 10%,
+    #000103 42%,
+    #000103 100%
+  );
   clip-path: circle(0% at 50% 50%);
   z-index: 2;
 }
 
+/* A blurred, brighter copy of the same gradient, clipped to a slightly
+   larger radius than .iris every frame (see eye.ts's GLOW_LEAD) so its glow
+   always leads a step ahead of the solid mask's edge — light expanding
+   outward, then overtaken by the mask right behind it, rather than a single
+   hard-edged wipe. Sits behind .iris (lower z-index) and screens onto
+   whatever's still visible around the mask's own edge. */
+.iris-glow {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  width: 100%;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgb(159 196 255 / 90%) 0%,
+    rgb(77 107 254 / 40%) 30%,
+    transparent 70%
+  );
+  clip-path: circle(0% at 50% 50%);
+  filter: blur(38px);
+  mix-blend-mode: screen;
+  z-index: 1;
+}
+
+/* A soft glow bleeding down from the top — where the reader just arrived
+   from, having watched .iris-glow's own light get overtaken by the mask a
+   moment ago — rather than a flat cut from "inside the eye" to "an ordinary
+   webpage". Still resolves to the same #000103 base a few hundred px down. */
 #surface {
   position: relative;
   z-index: 1;
-  background: #000103;
+  background:
+    radial-gradient(ellipse 60% 42vh at 50% 0%, rgb(77 107 254 / 14%), transparent 70%),
+    #000103;
   padding: 12vh 1.5rem 4rem;
   min-height: 100vh;
 }
