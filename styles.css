@@ -121,15 +121,32 @@ h1 {
   position: relative;
 }
 
-/* The mask itself: a radial gradient rather than a flat fill, so growing its
-   clip-path circle sweeps outward through a bright core toward black instead
-   of wiping one flat colour across the screen — see eye.ts for why it's
-   layered under .iris-glow rather than alone. */
-.iris {
+/* The single sticky element for the whole eye transition. Both mask layers
+   (.iris, .iris-glow) are absolutely positioned inside this one wrapper
+   rather than each being sticky themselves — two SIBLING sticky elements,
+   each 100vh tall stacked in normal flow, engage stickiness at DIFFERENT
+   scroll offsets: the first sticks as soon as it reaches the viewport top,
+   but the second's own normal (unstuck) position starts 100vh further down
+   (below the first one's box), so it doesn't start sticking until scroll has
+   advanced a further 100vh past that — exactly the "one mask expands in
+   place, the other slides up the page" bug this fixes. Making both layers
+   position:absolute inside one sticky parent means there is only one
+   element's sticky engagement to reason about, so they can never drift
+   apart. */
+.iris-stack {
   position: sticky;
   top: 0;
   height: 100vh;
   width: 100%;
+}
+
+/* The mask itself: a radial gradient rather than a flat fill, so growing its
+   clip-path circle sweeps outward through a bright core toward black instead
+   of wiping one flat colour across the screen — see eye.ts for why it's
+   layered above .iris-glow rather than alone. */
+.iris {
+  position: absolute;
+  inset: 0;
   background: radial-gradient(
     circle at 50% 50%,
     rgb(159 196 255 / 90%) 0%,
@@ -146,33 +163,44 @@ h1 {
    always leads a step ahead of the solid mask's edge — light expanding
    outward, then overtaken by the mask right behind it, rather than a single
    hard-edged wipe. Sits behind .iris (lower z-index) and screens onto
-   whatever's still visible around the mask's own edge. */
+   whatever's still visible around the mask's own edge.
+
+   The clip-path lives on THIS element; the gradient + blur live on the
+   .iris-glow-fill child instead. filter and clip-path on the same element
+   can rasterise oddly together in some browsers, so splitting them keeps the
+   blur predictable regardless of what the clip is doing that frame. */
 .iris-glow {
-  position: sticky;
-  top: 0;
-  height: 100vh;
-  width: 100%;
+  position: absolute;
+  inset: 0;
+  clip-path: circle(0% at 50% 50%);
+  z-index: 1;
+}
+
+.iris-glow-fill {
+  position: absolute;
+  inset: 0;
   background: radial-gradient(
     circle at 50% 50%,
     rgb(159 196 255 / 90%) 0%,
     rgb(77 107 254 / 40%) 30%,
     transparent 70%
   );
-  clip-path: circle(0% at 50% 50%);
   filter: blur(38px);
   mix-blend-mode: screen;
-  z-index: 1;
 }
 
 /* A soft glow bleeding down from the top — where the reader just arrived
    from, having watched .iris-glow's own light get overtaken by the mask a
    moment ago — rather than a flat cut from "inside the eye" to "an ordinary
-   webpage". Still resolves to the same #000103 base a few hundred px down. */
+   webpage". Reaches most of a typical viewport's worth of scroll (90vh)
+   rather than fading out within the first screen, so the cards further down
+   still carry a trace of it instead of sitting on flat black; still resolves
+   to the plain #000103 base well before the footer. */
 #surface {
   position: relative;
   z-index: 1;
   background:
-    radial-gradient(ellipse 60% 42vh at 50% 0%, rgb(77 107 254 / 14%), transparent 70%),
+    radial-gradient(ellipse 70% 90vh at 50% 0%, rgb(77 107 254 / 16%), transparent 85%),
     #000103;
   padding: 12vh 1.5rem 4rem;
   min-height: 100vh;

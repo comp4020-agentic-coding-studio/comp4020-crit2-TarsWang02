@@ -187,7 +187,9 @@ const USE_DEFOCUS_OUTLINE = true;
 // lit from the very first frame gave nothing away to arrive at — the concept
 // is a thing inferred, then finally seen, not a sticker left on at all times.
 const GLOW_OPACITY_SURFACE = 0.08; // the soft layer's floor before it wakes up
-const GLOW_OPACITY_EYE = 0.85; // the soft layer's ceiling, reached as the mark resolves
+const GLOW_OPACITY_EYE = 0.5; // the soft layer's ceiling, reached as the mark resolves — kept
+// low: reported as too bright/busy at 0.85, and a restrained glow reads as more considered
+// than a blown-out one.
 const GLOW_AWAKEN_P = 0.5; // dive progress where the glow starts brightening at all
 // #eye's own trigger (see eye.ts) starts closing once #depth's 400vh has
 // scrolled past — around p ≈ 0.645 of this dive, given #depth and #eye's
@@ -200,10 +202,10 @@ const GLOW_AWAKEN_P = 0.5; // dive progress where the glow starts brightening at
 // eye with the mask" — the reveal has to still be visible when it lands.
 const LOGO_RESOLVE_START = 0.5;
 const LOGO_RESOLVE_END = 0.64; // fully resolved just before #eye starts closing over it
-const LOGO_SHARP_MAX_OPACITY = 1;
-const LOGO_RIM_MAX_OPACITY = 0.55;
-const LOGO_PULSE_SPEED = 0.9; // radians/sec — a slow, held shimmer, not a blink
-const LOGO_PULSE_DEPTH = 0.12; // how far the shimmer dips below full strength
+// Both reduced from an earlier pass (1 / 0.55) that read as too bright and too busy for
+// what's meant to be a restrained, glimpsed presence rather than a lit sign.
+const LOGO_SHARP_MAX_OPACITY = 0.7;
+const LOGO_RIM_MAX_OPACITY = 0.16;
 
 const NOISE_FREQ = 0.16;
 const FLOW_SPEED = 0.75;
@@ -465,7 +467,7 @@ const LOGO_DRAW_SCALE = 0.4; // fraction of the canvas WIDTH the mark's own widt
 // presence glimpsed at a distance, not a logo pasted across the screen.
 const LOGO_SOFT_BLUR_PX = 46; // canvas-filter blur for the "undefined light" layer
 const LOGO_RIM_SCALE = 1.14; // the rim layer is the mark drawn slightly oversized behind the sharp one
-const LOGO_RIM_BLUR_PX = 10; // soft enough to read as a halo, not a second copy of the mark
+const LOGO_RIM_BLUR_PX = 20; // soft enough to read as ambient light, not a second copy of the mark
 
 /**
  * Three renders of the same mark, all with its eye at the canvas centre so
@@ -827,17 +829,12 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     glowSharp.position.copy(glowSoft.position);
     if (logosReady) {
       const resolve = logoResolveAmount(p);
-      // A slow shimmer on the resolved mark alone — cosmetic, driven by wall
-      // clock `t` like the camera's own jitter, not by scroll — so a
-      // fully-resolved mark reads as a live projection rather than a static
-      // sticker even while the reader holds still.
-      const shimmer = 1 - LOGO_PULSE_DEPTH * (0.5 - 0.5 * Math.sin(t * LOGO_PULSE_SPEED));
       // The soft layer eases back as the sharp mark takes over, rather than
       // both sitting at full additive strength together and blowing out —
       // the mark should emerge from the light, not just sit on top of it.
       glowSoft.material.opacity = glowBrightness(p) * (1 - 0.3 * resolve);
-      glowRim.material.opacity = resolve * LOGO_RIM_MAX_OPACITY * shimmer;
-      glowSharp.material.opacity = resolve * LOGO_SHARP_MAX_OPACITY * shimmer;
+      glowRim.material.opacity = resolve * LOGO_RIM_MAX_OPACITY;
+      glowSharp.material.opacity = resolve * LOGO_SHARP_MAX_OPACITY;
     }
 
     for (const strand of strands) {
