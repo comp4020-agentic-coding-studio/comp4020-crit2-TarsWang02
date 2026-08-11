@@ -132,15 +132,21 @@ h1 {
    `position: fixed`, not `sticky` — sticky shipped a dead zone where the
    mask sat fully closed for a full extra viewport-height of scrolling
    before #surface actually appeared (see eye.ts's own comment for why
-   that's inherent to sticky, not a tuning miss). display is toggled by
-   eye.ts's ScrollTrigger onEnter/onLeave, exactly bracketing #eye, so the
-   fail-safe default here is "not shown" — the same reasoning as .hero's own
-   inline `opacity: 0` before the scene's first frame runs. */
+   that's inherent to sticky, not a tuning miss).
+
+   Always present, never `display`-toggled — an earlier version toggled
+   `display: none/block` on scroll, which forces a layout reflow on every
+   crossing and read as choppy rather than smooth. Visibility instead comes
+   entirely from .iris/.iris-glow's own `clip-path: circle(0%)`, already a
+   zero-area shape (see eye.ts). Because it's always present and covers the
+   full viewport, it stays permanently `pointer-events: none` — otherwise an
+   invisible full-screen box would silently swallow every click on the real
+   page underneath it, on every section, all the time. */
 .iris-stack {
   position: fixed;
   inset: 0;
   z-index: 5;
-  display: none;
+  pointer-events: none;
 }
 
 /* The mask itself: a radial gradient rather than a flat fill, so growing its

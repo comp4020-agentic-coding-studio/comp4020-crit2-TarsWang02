@@ -26,53 +26,53 @@ const GLOW_LEAD = 1.15; // the glow layer's radius as a multiple of the solid ma
  * That gap isn't a tuning mistake, it's an inherent property of
  * `position: sticky; top: 0`: a sticky element can only stay pinned until
  * its container has exactly one more viewport-height of room left, so it
- * releases a full 100vh *before* the container (#eye) actually ends —
- * whatever #eye's total height is, there is always a trailing 100vh where
- * the mask sits fully closed with nothing happening, because the sticky
- * element has already un-pinned and is just scrolling through its own
- * reserved space. No amount of retuning #eye's height removes that; only
- * not depending on sticky's release timing does.
+ * releases a full 100vh *before* the container (#eye) actually ends. A fixed
+ * overlay has no such reservation.
  *
- * A fixed overlay has no such reservation. Its visibility is driven
- * explicitly by a second ScrollTrigger's onEnter/onLeave callbacks, so it
- * appears exactly when #eye starts and disappears exactly when #eye ends —
- * the same instant #surface begins, not a screen-height later.
+ * Visibility is the clip-path itself, not a separate `display` toggle — an
+ * earlier version toggled `display: none/block` via a second ScrollTrigger's
+ * onEnter/onLeave, which forces a layout reflow on every crossing and read
+ * as choppy rather than smooth. `circle(0%)` is already a zero-area shape,
+ * i.e. already fully invisible, so there is nothing a `display` toggle adds
+ * for the "before #eye" and "after #eye" cases except that extra reflow —
+ * `self.progress` is naturally 0 (so r is 0, invisible) for the whole
+ * approach to #eye already. The one place this genuinely needs help is
+ * *after* #eye: GSAP clamps a scrubbed trigger's progress at 1 once you
+ * scroll past `end`, which would otherwise leave the mask parked at 150%
+ * (fully opaque) for the rest of the page — onLeave/onEnterBack below
+ * override the clip-path directly for exactly that case, nothing else.
+ * `.iris-stack` itself stays permanently `pointer-events: none` (see
+ * styles.css) so an always-present, usually-invisible full-viewport fixed
+ * box can never swallow a click on real content underneath it.
+ *
+ * Only `onLeave` needs a manual override, not all four edges: `onEnter` and
+ * `onLeaveBack` both land at progress ≈ 0, where r is already 0 (invisible)
+ * from the ordinary progress → r mapping, and `onEnterBack` lands back at
+ * progress ≈ 1, which the very next onUpdate recomputes correctly on its
+ * own. Only scrolling *past* `end` clamps progress at 1 instead of letting
+ * it fall back to 0, which is the one case that actually needs correcting.
  */
 export function setupEyeTransition(): void {
   const eye = document.querySelector<HTMLElement>("#eye");
-  const stack = document.querySelector<HTMLElement>(".iris-stack");
   const iris = document.querySelector<HTMLElement>(".iris");
   const irisGlow = document.querySelector<HTMLElement>(".iris-glow");
-  if (!eye || !stack || !iris || !irisGlow) return;
+  if (!eye || !iris || !irisGlow) return;
 
-  const setVisible = (visible: boolean): void => {
-    stack.style.display = visible ? "block" : "none";
+  const setClip = (r: number): void => {
+    iris.style.clipPath = `circle(${r}% at 50% 50%)`;
+    irisGlow.style.clipPath = `circle(${Math.min(r * GLOW_LEAD, 160)}% at 50% 50%)`;
   };
-  setVisible(false);
 
-  ScrollTrigger.create({
-    trigger: eye,
-    start: "top top",
-    end: "bottom top",
-    onEnter: () => setVisible(true),
-    onEnterBack: () => setVisible(true),
-    onLeave: () => setVisible(false),
-    onLeaveBack: () => setVisible(false),
-  });
-
-  // The clip animation now spans the whole of #eye's own height, not
+  // The clip animation spans the whole of #eye's own height, not
   // `offsetHeight - innerHeight` — that subtraction existed only to leave
-  // room for the sticky element's own height, which a fixed overlay doesn't
+  // room for a sticky element's own height, which a fixed overlay doesn't
   // need. Reaching 100% now coincides with #eye's bottom edge exactly.
   ScrollTrigger.create({
     trigger: eye,
     start: "top top",
     end: "bottom top",
     scrub: 0.5,
-    onUpdate: (self) => {
-      const r = self.progress * 150;
-      iris.style.clipPath = `circle(${r}% at 50% 50%)`;
-      irisGlow.style.clipPath = `circle(${Math.min(r * GLOW_LEAD, 160)}% at 50% 50%)`;
-    },
+    onUpdate: (self) => setClip(self.progress * 150),
+    onLeave: () => setClip(0),
   });
 }
