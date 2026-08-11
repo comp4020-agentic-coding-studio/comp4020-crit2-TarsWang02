@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { strandArc, narrationStateAt, logoResolveAmount, type ArcTiming } from "../src/scene";
+import { strandArc, narrationStateAt, logoResolveAmount, glowBrightness, type ArcTiming } from "../src/scene";
 
 // Every strand is meant to live one arc: arrive small, faint and soft; hold a
 // readable window at full size and full sharpness; then swell past peak and
@@ -184,5 +184,24 @@ describe("logoResolveAmount", () => {
     expect(logoResolveAmount(0.45)).toBe(0);
     expect(logoResolveAmount(0.57)).toBeGreaterThan(0);
     expect(logoResolveAmount(0.57)).toBeLessThan(1);
+  });
+});
+
+// The ambient glow stays dim through the first half of the dive rather than
+// being bright from frame one — it should read as "something is there", not
+// compete with the reading, until the dive is genuinely closing on the mark.
+describe("glowBrightness", () => {
+  it("stays flat and dim before the halfway point", () => {
+    const atStart = glowBrightness(0);
+    const atQuarter = glowBrightness(0.25);
+    const atHalf = glowBrightness(0.5);
+    expect(atStart).toBeCloseTo(atQuarter, 5);
+    expect(atQuarter).toBeCloseTo(atHalf, 5);
+  });
+
+  it("brightens only after the halfway point, toward the eye", () => {
+    const atHalf = glowBrightness(0.5);
+    const atEnd = glowBrightness(1);
+    expect(atEnd).toBeGreaterThan(atHalf);
   });
 });

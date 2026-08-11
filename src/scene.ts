@@ -178,13 +178,16 @@ const USE_DEFOCUS_OUTLINE = true;
 // The absence (text genuinely bending around a volume it never enters) is
 // still there and untouched — the exclusion cone below still reads `sdf`, the
 // same hand-authored silhouette it always has. What sits *visibly* in that
-// cone is two layers of DeepSeek's own mark (see loadLogoTextures), not the
-// silhouette itself: an ambient, undefined glow present through most of the
-// dive, and the actual logo resolving out of it only near the eye. A shape
-// legible from the very first frame gave nothing away to arrive at — the
-// concept is a thing inferred, then finally seen, not a sticker.
-const GLOW_OPACITY_SURFACE = 0.4; // the soft layer's floor — present, not yet a shape
-const GLOW_OPACITY_EYE = 0.85; // the soft layer's ceiling, reached as the logo resolves
+// cone is two layers of DeepSeek's own mark (see loadLogoTextures): an
+// ambient, undefined glow that stays dim through the first half of the dive
+// — present enough to register as "something is there", not bright enough to
+// compete with the reading — then brightens from GLOW_AWAKEN_P onward, and
+// the actual mark resolving out of it only near the eye. A shape legible and
+// lit from the very first frame gave nothing away to arrive at — the concept
+// is a thing inferred, then finally seen, not a sticker left on at all times.
+const GLOW_OPACITY_SURFACE = 0.08; // the soft layer's floor before it wakes up
+const GLOW_OPACITY_EYE = 0.85; // the soft layer's ceiling, reached as the mark resolves
+const GLOW_AWAKEN_P = 0.5; // dive progress where the glow starts brightening at all
 // #eye's own trigger (see eye.ts) starts closing once #depth's 400vh has
 // scrolled past — around p ≈ 0.645 of this dive, given #depth and #eye's
 // relative heights — and the iris is fully opaque (clip-path circle at its
@@ -446,8 +449,15 @@ const LOGO_VIEWBOX = { x: 0.163086, y: 1.75, width: 26.634, height: 19.6 };
 const LOGO_EYE_U = (14.4659 - LOGO_VIEWBOX.x) / LOGO_VIEWBOX.width;
 const LOGO_EYE_V = (11.2489 - LOGO_VIEWBOX.y) / LOGO_VIEWBOX.height;
 
-const LOGO_CANVAS_SIZE = 1024;
-const LOGO_DRAW_SCALE = 0.62; // fraction of the canvas the mark's own width fills
+// The canvas has to match the glow plane's own aspect ratio
+// (WORLD_HALF_WIDTH : WORLD_HALF_HEIGHT, 2:1), not be square — a square
+// texture mapped onto a 2:1 plane gets stretched horizontally, which is
+// exactly what flattened the mark on the first pass. WebGL wants power-of-two
+// dimensions for mip-mapping, hence 1024×512 rather than a literal 2:1 of
+// some rounder number.
+const LOGO_CANVAS_WIDTH = 1024;
+const LOGO_CANVAS_HEIGHT = 512;
+const LOGO_DRAW_SCALE = 0.62; // fraction of the canvas WIDTH the mark's own width fills
 const LOGO_SOFT_BLUR_PX = 46; // canvas-filter blur for the "undefined light" layer
 
 /**
@@ -463,19 +473,19 @@ function loadLogoTextures(): Promise<{ sharp: THREE.CanvasTexture; soft: THREE.C
     const img = new Image();
     img.onload = () => {
       const iconAspect = LOGO_VIEWBOX.width / LOGO_VIEWBOX.height;
-      const drawWidth = LOGO_CANVAS_SIZE * LOGO_DRAW_SCALE;
+      const drawWidth = LOGO_CANVAS_WIDTH * LOGO_DRAW_SCALE;
       const drawHeight = drawWidth / iconAspect;
-      const drawX = LOGO_CANVAS_SIZE / 2 - LOGO_EYE_U * drawWidth;
-      const drawY = LOGO_CANVAS_SIZE / 2 - LOGO_EYE_V * drawHeight;
+      const drawX = LOGO_CANVAS_WIDTH / 2 - LOGO_EYE_U * drawWidth;
+      const drawY = LOGO_CANVAS_HEIGHT / 2 - LOGO_EYE_V * drawHeight;
 
       const sharpCanvas = document.createElement("canvas");
-      sharpCanvas.width = LOGO_CANVAS_SIZE;
-      sharpCanvas.height = LOGO_CANVAS_SIZE;
+      sharpCanvas.width = LOGO_CANVAS_WIDTH;
+      sharpCanvas.height = LOGO_CANVAS_HEIGHT;
       sharpCanvas.getContext("2d")!.drawImage(img, drawX, drawY, drawWidth, drawHeight);
 
       const softCanvas = document.createElement("canvas");
-      softCanvas.width = LOGO_CANVAS_SIZE;
-      softCanvas.height = LOGO_CANVAS_SIZE;
+      softCanvas.width = LOGO_CANVAS_WIDTH;
+      softCanvas.height = LOGO_CANVAS_HEIGHT;
       const softCtx = softCanvas.getContext("2d")!;
       softCtx.filter = `blur(${LOGO_SOFT_BLUR_PX}px)`;
       softCtx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
@@ -496,6 +506,16 @@ export function logoResolveAmount(p: number): number {
   return smoothstep(
     THREE.MathUtils.clamp((p - LOGO_RESOLVE_START) / (LOGO_RESOLVE_END - LOGO_RESOLVE_START), 0, 1),
   );
+}
+
+/** The soft layer's own opacity at dive progress `p`: flat at
+ * GLOW_OPACITY_SURFACE until GLOW_AWAKEN_P, then easing up toward
+ * GLOW_OPACITY_EYE — dim and present, not dark, for the first half of the
+ * dive, so it doesn't compete with the reading before there's any reason for
+ * it to. */
+export function glowBrightness(p: number): number {
+  const t = smoothstep(THREE.MathUtils.clamp((p - GLOW_AWAKEN_P) / (1 - GLOW_AWAKEN_P), 0, 1));
+  return THREE.MathUtils.lerp(GLOW_OPACITY_SURFACE, GLOW_OPACITY_EYE, t);
 }
 
 /**
@@ -783,7 +803,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       // The soft layer eases back as the sharp mark takes over, rather than
       // both sitting at full additive strength together and blowing out —
       // the mark should emerge from the light, not just sit on top of it.
-      glowSoft.material.opacity = THREE.MathUtils.lerp(GLOW_OPACITY_SURFACE, GLOW_OPACITY_EYE, p) * (1 - 0.3 * resolve);
+      glowSoft.material.opacity = glowBrightness(p) * (1 - 0.3 * resolve);
       glowSharp.material.opacity = resolve * LOGO_SHARP_MAX_OPACITY;
     }
 
