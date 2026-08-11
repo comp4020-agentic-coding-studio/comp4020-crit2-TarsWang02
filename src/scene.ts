@@ -25,8 +25,8 @@ gsap.registerPlugin(ScrollTrigger);
 // me, invisible for you".
 //
 // configureTextBuilder is used rather than setting `mesh.font` per strand:
-// one call, before the first mesh is constructed, covering every strand and
-// every respawn — there is no path that can silently miss it.
+// one call, before the first mesh is constructed, covering every strand —
+// there is no path that can silently miss it.
 configureTextBuilder({ defaultFontURL: fontURL });
 
 // How hard the whale's absence is defended. The repulsion now applies at
@@ -60,14 +60,41 @@ const CAMERA_JITTER_SPEED = 0.12;
 // with the dive and the camera is always descending into fresh text.
 const RETIRE_LEAD = 1.6;
 const LIFE_RANGE = 15;
-const MOTE_LIFESPAN_MIN = 15;
-const MOTE_LIFESPAN_MAX = 27;
-// A reader carries a real title or note and needs enough peak-focus time to
-// actually be read, not just glimpsed — READER_ARC's phase fractions leave
-// about 48% of lifespan at peak, so even the shorter end here (26 * 0.48 ≈
-// 12.5s) is well past the ~3-5s floor a sentence of this length needs.
-const READER_LIFESPAN_MIN = 26;
-const READER_LIFESPAN_MAX = 40;
+
+// A strand's whole birth-peak-retirement arc is a pure function of SCROLL
+// PROGRESS (`p`, 0..1 across the dive), not of wall-clock time.
+//
+// The previous version drove age off an accumulated real-time clock `t`,
+// completely independent of scroll: strands were born, peaked and retired on
+// a real-time schedule whether or not the reader was scrolling, or even
+// looking at #depth yet. That produced exactly the reported symptoms —
+// content already mid-cycle (or long since retired and randomly re-spawned)
+// by the time the reader actually scrolled down, nothing tied to how far
+// they'd scrolled, and no way to reverse it by scrolling back up.
+//
+// Instead, each strand gets a fixed `startP` (where in the 0..1 dive its arc
+// begins) and `arcSpan` (how much of the dive its whole arc spans). Its
+// lifeT is `clamp((p - startP) / arcSpan, 0, 1)` — a pure function of
+// scroll position. Consequences, all for free from that one change:
+//   - at p = 0 (before the reader has scrolled into #depth at all), every
+//     startP > 0, so every strand's lifeT is exactly 0 — invisible. Nothing
+//     shows until the reader actually scrolls; the surface stays just water.
+//   - scrolling back up decreases p, which decreases lifeT exactly along the
+//     same curve — the retreat is the same shape as the arrival, not a
+//     separate one-directional fade that only ever plays forward.
+//   - pacing is controlled directly in scroll distance: a wider arcSpan is a
+//     more gradual entrance and exit, because it now costs more scrolling to
+//     traverse, not more waiting.
+// `t` (wall-clock) still exists below, but only for cosmetic motion — the
+// curl-noise drift and camera jitter — never for whether something is alive.
+const READER_START_MIN = 0.03;
+const READER_START_MAX = 0.72;
+const READER_ARC_SPAN_MIN = 0.22; // a wide span: a slow, deliberate arrival and exit
+const READER_ARC_SPAN_MAX = 0.3;
+const MOTE_START_MIN = 0.015;
+const MOTE_START_MAX = 0.92;
+const MOTE_ARC_SPAN_MIN = 0.05; // texture: quick, numerous, felt rather than tracked
+const MOTE_ARC_SPAN_MAX = 0.09;
 
 // Density. A silhouette is an edge, and an edge needs enough elements to be
 // drawn by their absence — you cannot see a hole in something that is mostly
@@ -82,7 +109,6 @@ const READERS_FULL = 26;
 const READERS_COMPACT = 12;
 const MOTES_FULL = 420;
 const MOTES_COMPACT = 150;
-const INITIAL_STAGGER = 5;
 
 const DEEP_NAVY = 0x040814;
 const CURRENT_BLUE = 0x4d6bfe;
@@ -106,9 +132,17 @@ const CURRENT_BLUE = 0x4d6bfe;
 // noticed, so it stays fast and its scale swing stays subtle. Without this
 // split every strand read as a peer and the one thing the field is actually
 // about — the research — never stood out from the grain around it.
+// Fractions here are of the strand's OWN lifeT (0..1), which is itself now a
+// fraction of arcSpan of the whole dive — so the true on-screen pace is
+// birthPhase × arcSpan × (total scroll distance). Raised from the previous
+// round (0.2/0.32) because "pops in too fast" was a real report: a reader's
+// entrance previously cost about 6% of the whole dive's scroll distance,
+// which reads as sudden even though the code called it an "arc". At ~0.32 of
+// a ~0.26 arcSpan, an entrance now costs roughly 8-9% of the total scroll —
+// still leaves most of the arc at genuine peak-focus reading time.
 const READER_ARC: ArcTiming = {
-  birthPhase: 0.2, // slower entrance than a mote's
-  retirePhase: 0.32, // slower exit
+  birthPhase: 0.32, // slower entrance than a mote's
+  retirePhase: 0.38, // slower exit
   birthScale: 0.12, // arrives noticeably small
   retireScale: 2.8, // a pronounced pop passing the lens
 };
@@ -141,16 +175,16 @@ const USE_DEFOCUS_OUTLINE = true;
 // the same cone projection the text repulsion uses, so if the geometry is ever
 // wrong the glow is wrong in exactly the same way and the disagreement between
 // hole and glow is itself diagnostic.
-// 0.06 was too close to zero to register as "something is there" rather than
-// "nothing is there" through the whole reading section — exactly where the
-// reader is actually looking — only becoming clearly visible in the last
-// stretch before the eye. Raised so a soft blue presence is perceptible from
-// early on; GLOW_OPACITY_EYE re-derived to keep a comparable growth ratio
-// (was 6x the floor, now ~2.8x) so it still reads as closing in, not as
-// switching on.
-const GLOW_OPACITY_SURFACE = 0.22;
-const GLOW_OPACITY_EYE = 0.62;
-const GLOW_SPREAD = 1.6; // how far the falloff reaches past the silhouette
+// Two rounds of raising this from 0.06 (invisible) to 0.22 (still reported
+// invisible against a dense, brightly-lit text field) — the glow was losing a
+// brightness contest against the reader/mote population around it, not just
+// being generically too dim. Pushed further and the additive falloff spread
+// wider (GLOW_SPREAD) so the whale reads as an unmissable presence rather
+// than something to hunt for. GLOW_OPACITY_EYE keeps a growth ratio (~2x)
+// so it still reads as closing in, not switching on abruptly at the eye.
+const GLOW_OPACITY_SURFACE = 0.4;
+const GLOW_OPACITY_EYE = 0.85;
+const GLOW_SPREAD = 2.2; // how far the falloff reaches past the silhouette
 
 const NOISE_FREQ = 0.16;
 const FLOW_SPEED = 0.75;
@@ -172,8 +206,10 @@ interface Strand {
   phase: number;
   speed: number;
   baseOpacity: number;
-  birthTime: number;
-  lifespan: number;
+  /** Dive progress (0..1) at which this strand's arc begins. */
+  startP: number;
+  /** Fraction of dive progress the whole birth-peak-retirement arc spans. */
+  arcSpan: number;
   isReader: boolean;
 }
 
@@ -346,8 +382,16 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
 
   const sdf = buildWhaleSDF();
 
-  function lifespanFor(isReader: boolean): number {
-    return isReader ? rand(READER_LIFESPAN_MIN, READER_LIFESPAN_MAX) : rand(MOTE_LIFESPAN_MIN, MOTE_LIFESPAN_MAX);
+  /** A strand's own window of dive progress: where its arc starts, and how
+   * much scroll distance the whole birth-peak-retirement cycle spans. */
+  function scheduleFor(isReader: boolean): { startP: number; arcSpan: number } {
+    const arcSpan = isReader ? rand(READER_ARC_SPAN_MIN, READER_ARC_SPAN_MAX) : rand(MOTE_ARC_SPAN_MIN, MOTE_ARC_SPAN_MAX);
+    const startMin = isReader ? READER_START_MIN : MOTE_START_MIN;
+    const startMax = isReader ? READER_START_MAX : MOTE_START_MAX;
+    // Clamp so startP + arcSpan never overshoots 1 — a strand whose arc was
+    // still climbing when the dive ended would never reach its own peak.
+    const startP = rand(startMin, Math.min(startMax, 1 - arcSpan));
+    return { startP, arcSpan };
   }
 
   // Additive so it reads as light in water rather than a painted shape, and
@@ -377,7 +421,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   glow.scale.set(whaleHalfWidth * 2 * GLOW_SPREAD, whaleHalfHeight * 2 * GLOW_SPREAD, 1);
   scene.add(glow);
 
-  function makeStrand(isReader: boolean, staggeredBirth: boolean): Strand {
+  function makeStrand(isReader: boolean): Strand {
     const mesh = new Text();
     if (isReader) {
       const paper = pick(papers);
@@ -402,8 +446,12 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     mesh.fillOpacity = 0;
     mesh.sync();
 
-    const whaleDistance = whaleDistanceAt(0) * whaleDistanceScale;
-    const depth = rand(RETIRE_LEAD, RETIRE_LEAD + LIFE_RANGE);
+    const { startP, arcSpan } = scheduleFor(isReader);
+    // Placed at the depth its arc will start from, at the whale's position at
+    // that same startP — both the strand and the whale it must avoid are
+    // evaluated at the progress where this strand actually begins existing.
+    const whaleDistance = whaleDistanceAt(startP) * whaleDistanceScale;
+    const depth = RETIRE_LEAD + LIFE_RANGE;
     const [x, y] = spawnClearOfWhale(sdf, depth, whaleDistance);
 
     return {
@@ -416,45 +464,21 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       phase: rand(0, 1000),
       speed: rand(0.35, 0.75),
       baseOpacity: isReader ? rand(0.6, 1) : rand(0.35, 0.8),
-      birthTime: staggeredBirth ? rand(0, INITIAL_STAGGER) : 0,
-      // Spread generation zero across its lifespan so the whole population
-      // doesn't retire together and leave the field momentarily bare.
-      lifespan: lifespanFor(isReader),
+      startP,
+      arcSpan,
       isReader,
     };
   }
 
   const strands: Strand[] = [];
   for (let i = 0; i < (isCompact ? READERS_COMPACT : READERS_FULL); i++) {
-    strands.push(makeStrand(true, true));
+    strands.push(makeStrand(true));
   }
   for (let i = 0; i < (isCompact ? MOTES_COMPACT : MOTES_FULL); i++) {
-    strands.push(makeStrand(false, true));
+    strands.push(makeStrand(false));
   }
   for (const strand of strands) {
-    // Generation zero starts partway through its life so retirements are
-    // staggered from the outset rather than arriving in one wave.
-    strand.birthTime = -rand(0, strand.lifespan * 0.9);
     scene.add(strand.mesh);
-  }
-
-  /**
-   * Retires a strand and rebirths it deep and clear of the whale. The text is
-   * deliberately left alone: changing it would force a troika sync(), and at
-   * this population that is a few hundred re-layouts a minute for variety the
-   * field already has from its size.
-   */
-  function respawn(strand: Strand, now: number, whaleDistance: number): void {
-    const depth = RETIRE_LEAD + LIFE_RANGE;
-    const [x, y] = spawnClearOfWhale(sdf, depth, whaleDistance);
-    strand.x = x;
-    strand.y = y;
-    strand.homeX = x;
-    strand.homeY = y;
-    strand.phase = rand(0, 1000);
-    strand.speed = rand(0.35, 0.75);
-    strand.birthTime = now;
-    strand.lifespan = lifespanFor(strand.isReader);
   }
 
   function resize(): void {
@@ -488,13 +512,14 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
 
   let raf = 0;
   const clock = new THREE.Clock();
-  // Not clock.elapsedTime: that is raw wall-clock time, and it jumps by the
-  // whole pause the instant a backgrounded tab resumes. Since age is compared
-  // against a 15–27s lifespan, one such jump ages the entire population past
-  // its lifespan in a single frame, respawning everything at once — the whole
-  // field lands at its deepest, faintest moment together and the scene reads
-  // as having gone black. Accumulating from the already-clamped per-frame dt
-  // costs at most one frame of time no matter how long the tab slept.
+  // `t` no longer decides whether anything is alive — that's `p` (dive
+  // progress) now, a pure function of scroll position, not time. `t` still
+  // drives purely cosmetic motion: curl-noise drift on strands that ARE
+  // active, and the camera's idle jitter. Accumulated from the per-frame
+  // delta (clamped to 1/30s) rather than read as clock.elapsedTime, so a
+  // backgrounded tab resuming after a long pause doesn't jump this by the
+  // whole gap — it only ever advances by one clamped frame's worth, however
+  // long the tab slept.
   let t = 0;
 
   function tick(): void {
@@ -528,17 +553,26 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     glowMaterial.opacity = THREE.MathUtils.lerp(GLOW_OPACITY_SURFACE, GLOW_OPACITY_EYE, p);
 
     for (const strand of strands) {
-      const age = t - strand.birthTime;
-      if (age >= strand.lifespan) {
-        respawn(strand, t, whaleDistance);
-        // Both channels, or the retiring strand's defocus glow flashes for a
-        // frame at its reborn position before the arc takes over.
+      // Outside its own [startP, startP + arcSpan] window a strand doesn't
+      // exist yet, or has already finished existing — not "invisible", never
+      // instantiated into the scene's visible state at all. This is the gate
+      // that makes the surface read as pure water before any scrolling: at
+      // p = 0 every strand's startP > 0, so this branch is taken for all of
+      // them and nothing whatsoever is drawn.
+      //
+      // Without this explicit gate, strandArc's own math still leaves a
+      // problem at the boundary: at lifeT clamped to exactly 0, focus is 0
+      // but defocus (1 - focus) is 1, so the "blurred glow standing in for
+      // the sharp glyph" would render at full strength for a strand that
+      // hasn't started yet — a ghost glowing before its own birth. Gating on
+      // the window itself, not just on strandArc's output, avoids that.
+      if (p < strand.startP || p > strand.startP + strand.arcSpan) {
         strand.mesh.fillOpacity = 0;
         strand.mesh.outlineOpacity = 0;
         continue;
       }
 
-      const lifeT = age / strand.lifespan;
+      const lifeT = THREE.MathUtils.clamp((p - strand.startP) / strand.arcSpan, 0, 1);
 
       const { focus, scale } = strandArc(lifeT, strand.isReader ? READER_ARC : MOTE_ARC);
 

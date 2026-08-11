@@ -15,8 +15,16 @@ import { strandArc, type ArcTiming } from "../src/scene";
 // numbers scene.ts uses for each tier, duplicated here rather than imported so
 // a change to either config is a deliberate edit to this file too, not a
 // silent drift.
-const READER: ArcTiming = { birthPhase: 0.2, retirePhase: 0.32, birthScale: 0.12, retireScale: 2.8 };
+const READER: ArcTiming = { birthPhase: 0.32, retirePhase: 0.38, birthScale: 0.12, retireScale: 2.8 };
 const MOTE: ArcTiming = { birthPhase: 0.16, retirePhase: 0.3, birthScale: 0.55, retireScale: 1.35 };
+
+// A strand's lifeT (what strandArc takes) is now `(p - startP) / arcSpan` —
+// a fraction of DIVE PROGRESS, not of a wall-clock lifespan in seconds. These
+// mirror scene.ts's READER_ARC_SPAN_MIN/MAX and MOTE_ARC_SPAN_MIN/MAX,
+// duplicated for the same reason the timing configs above are: a change to
+// either is a deliberate edit here too.
+const READER_ARC_SPAN_MIN = 0.22;
+const MOTE_ARC_SPAN_MAX = 0.09;
 
 describe.each([
   ["reader", READER],
@@ -84,12 +92,18 @@ describe("readers vs motes", () => {
     expect(READER.retirePhase).toBeGreaterThan(MOTE.retirePhase);
   });
 
-  it("leaves a reader enough peak-focus time to actually read a full title", () => {
-    // Real reading time, not a glimpse: the brief's floor is ~3-5s minimum at
-    // full focus. Checked against the shorter end of the reader lifespan
-    // range (26s, from scene.ts) so this holds even for the least generous case.
-    const READER_LIFESPAN_SHORT = 26;
+  it("leaves a reader a genuine peak-focus plateau, not a pinch", () => {
+    // lifeT is now a fraction of dive progress (see the module comment above),
+    // not of a wall-clock lifespan, so "enough time to read" is no longer a
+    // seconds figure — it's a comfortable share of the strand's own arc spent
+    // at full focus, real content on screen rather than mid-transition.
     const peakFraction = 1 - READER.birthPhase - READER.retirePhase;
-    expect(peakFraction * READER_LIFESPAN_SHORT).toBeGreaterThan(5);
+    expect(peakFraction).toBeGreaterThan(0.25);
+  });
+
+  it("gives even the shortest reader arc more scroll distance than the longest mote arc", () => {
+    // The main content should never be traversed faster than the texture
+    // around it — readers are meant to be the slower, deliberate event.
+    expect(READER_ARC_SPAN_MIN).toBeGreaterThan(MOTE_ARC_SPAN_MAX);
   });
 });
