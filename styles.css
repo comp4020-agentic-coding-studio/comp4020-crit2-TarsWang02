@@ -121,23 +121,26 @@ h1 {
   position: relative;
 }
 
-/* The single sticky element for the whole eye transition. Both mask layers
-   (.iris, .iris-glow) are absolutely positioned inside this one wrapper
-   rather than each being sticky themselves — two SIBLING sticky elements,
-   each 100vh tall stacked in normal flow, engage stickiness at DIFFERENT
-   scroll offsets: the first sticks as soon as it reaches the viewport top,
-   but the second's own normal (unstuck) position starts 100vh further down
-   (below the first one's box), so it doesn't start sticking until scroll has
-   advanced a further 100vh past that — exactly the "one mask expands in
-   place, the other slides up the page" bug this fixes. Making both layers
-   position:absolute inside one sticky parent means there is only one
-   element's sticky engagement to reason about, so they can never drift
-   apart. */
+/* The single element for the whole eye transition. Both mask layers (.iris,
+   .iris-glow) are absolutely positioned inside this one wrapper rather than
+   each being positioned themselves — that split is what let them drift out
+   of alignment in an earlier version (two sibling `position: sticky`
+   elements engage stickiness at different scroll offsets); positioning them
+   inside one parent means there's only one element's position to reason
+   about, so they can never drift apart.
+
+   `position: fixed`, not `sticky` — sticky shipped a dead zone where the
+   mask sat fully closed for a full extra viewport-height of scrolling
+   before #surface actually appeared (see eye.ts's own comment for why
+   that's inherent to sticky, not a tuning miss). display is toggled by
+   eye.ts's ScrollTrigger onEnter/onLeave, exactly bracketing #eye, so the
+   fail-safe default here is "not shown" — the same reasoning as .hero's own
+   inline `opacity: 0` before the scene's first frame runs. */
 .iris-stack {
-  position: sticky;
-  top: 0;
-  height: 100vh;
-  width: 100%;
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: none;
 }
 
 /* The mask itself: a radial gradient rather than a flat fill, so growing its
